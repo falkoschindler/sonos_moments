@@ -12,8 +12,11 @@ def speakers_ui() -> ui.grid:
                                on_change=lambda e, zone=zone: setattr(zone, 'volume', e.value)) \
                 .props('dense').classes('w-32')
             ui.number(min=0, max=100).bind_value(slider).classes('w-12').props('borderless dense')
-            with ui.button_group().props('flat dense'):
-                ui.button(icon='play_arrow', on_click=zone.play).props('flat')
-                ui.button(icon='pause', on_click=zone.pause).props('flat')
-                ui.button(icon='stop', on_click=zone.stop).props('flat')
+            if zone.is_coordinator:
+                with ui.button_group().props('flat dense'):
+                    ui.button(icon='play_arrow', on_click=zone.play).props('flat')
+                    ui.button(icon='pause', on_click=zone.pause).props('flat')
+                    ui.button(icon='stop', on_click=zone.stop).props('flat')
+            else:
+                ui.element()
     return grid
