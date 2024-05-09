@@ -1,0 +1,50 @@
+[tool.poetry]
+name = "sonos-moments"
+version = "0.1.0"
+description = "Sonos Controller based on NiceGUI"
+authors = ["Falko Schindler <falko@zauberzeug.com>"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+soco = "^0.30.4"
+
+[tool.poetry.group.dev.dependencies]
+ruff = "^0.4.3"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.mypy]
+
+[[tool.mypy.overrides]]
+module = "soco.*"
+ignore_missing_imports = true
+
+[tool.ruff]
+indent-width = 4
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+    "I",  # isort
+    "E",  # pycodestyle
+    "W",  # pycodestyle
+    "B",  # bugbear
+    "F",  # pyflakes
+    "UP", # pyupgrade
+    "RUF", # ruff
+    "PL", # pylint
+]
+fixable = [
+    "I",  # isort
+]
+ignore = [
+    "E501", # line too long
+    "PLR2004", # magic value comparison
+]
+exclude = [
+    "website/documentation/content/*",
+]
