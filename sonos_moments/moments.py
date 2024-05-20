@@ -5,8 +5,8 @@ from nicegui import app, ui
 
 
 @ui.refreshable
-def moments_ui() -> ui.grid:
-    with ui.grid(columns='repeat(2, auto)').classes('items-center border shadow px-4 py-2') as grid:
+def moments_ui() -> None:
+    with ui.grid(columns='repeat(2, auto)').classes('items-center border shadow px-4 py-2 w-full overflow-hidden'):
         moments = app.storage.general.get('moments', [])
         if moments:
             for moment in moments:
@@ -16,7 +16,6 @@ def moments_ui() -> ui.grid:
                     ui.item('Delete', on_click=partial(remove_moment, moment))
         else:
             ui.label('No moments captured yet').classes('text-lg')
-    return grid
 
 
 def capture(moment: dict | None = None) -> None:
