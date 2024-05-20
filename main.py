@@ -18,4 +18,4 @@ def main():
     moments_ui()
 
 
-ui.run(title='Sonos Moments', favicon='icon.png')
+ui.run(title='Sonos Moments', favicon='icon.png', port=8081)
