@@ -2,7 +2,7 @@
 name = "sonos-moments"
 version = "0.1.0"
 description = "Sonos Controller based on NiceGUI"
-authors = ["Falko Schindler <falko@zauberzeug.com>"]
+authors = ["Falko Schindler <mail@falkoschindler.de>"]
 license = "MIT"
 readme = "README.md"
 
