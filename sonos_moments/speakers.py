@@ -15,5 +15,17 @@ def speakers_ui() -> None:
                     ui.button(icon='play_arrow', on_click=zone.play).props('flat dense')
                     ui.button(icon='pause', on_click=zone.pause).props('flat dense')
                     ui.button(icon='stop', on_click=zone.stop).props('flat dense')
+                    ui.button('+30s', on_click=lambda zone=zone: skip(zone, 30)).props('flat dense')
             else:
                 ui.element()
+
+
+def skip(zone: soco.SoCo, d_seconds: int) -> None:
+    position = zone.get_current_track_info()['position']  # hh:mm:ss
+    hours, minutes, seconds = map(int, position.split(':'))
+    seconds += d_seconds
+    minutes += seconds // 60
+    seconds %= 60
+    hours += minutes // 60
+    minutes %= 60
+    zone.seek(f'{hours:02d}:{minutes:02d}:{seconds:02d}')
