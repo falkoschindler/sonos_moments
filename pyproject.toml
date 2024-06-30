@@ -9,6 +9,7 @@ readme = "README.md"
 [tool.poetry.dependencies]
 python = "^3.11"
 soco = "^0.30.4"
+nicegui = "^1.4.28"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.4.3"
