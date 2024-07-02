@@ -46,6 +46,3 @@ ignore = [
     "E501", # line too long
     "PLR2004", # magic value comparison
 ]
-exclude = [
-    "website/documentation/content/*",
-]
