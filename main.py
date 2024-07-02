@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import argparse
+
 from nicegui import ui
 
 from sonos_moments import capture, moments_ui, speakers_ui
@@ -18,4 +20,8 @@ def main():
     moments_ui()
 
 
-ui.run(title='Sonos Moments', favicon='icon.png', port=8081)
+parser = argparse.ArgumentParser('Sonos Moments', description='Control Sonos speakers in a local network.')
+parser.add_argument('--port', type=int, default=8080)
+args = parser.parse_args()
+
+ui.run(title='Sonos Moments', favicon='icon.png', port=args.port)
