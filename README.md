@@ -35,27 +35,22 @@ Another advantage of this setup is that we can easily store shared state on the 
 To run Sonos Moments, you need a device in the same network as your Sonos speakers.
 This can be a Raspberry Pi, a laptop, or any other device that can run Python.
 
-1. Clone the repository:
+1. Install:
 
    ```bash
-   git clone https://github.com/falkoschindler/sonos_moments
-   cd sonos_moments
+   pip install sonos-moments
    ```
 
-2. Install the dependencies:
+2. Run:
 
    ```bash
-   poetry install
+   sonos-moments
    ```
 
-3. Run the server:
-
-   ```bash
-   python3 app.py
-   ```
-
-The web interface will automatically open in your default browser at `http://localhost:8081`.
+The web interface will automatically open in your default browser at `http://localhost:8080`.
 If you want to access it from another device, you need to replace `localhost` with the IP address of the server, which is printed in the console when the server starts.
+
+Run `sonos-moments --help` to see all available options, e.g. to change the port.
 
 ## Usage
 
