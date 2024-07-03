@@ -15,7 +15,7 @@ nicegui = "^1.4.28"
 ruff = "^0.4.3"
 
 [tool.poetry.scripts]
-sonos-moments = "app:main_without_reload"
+sonos-moments = "sonos_moments.app:main_without_reload"
 
 [build-system]
 requires = ["poetry-core"]

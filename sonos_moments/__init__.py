@@ -1,8 +1,5 @@
-from .moments import capture, moments_ui
-from .speakers import speakers_ui
+from .app import main
 
 __all__ = [
-    'capture',
-    'moments_ui',
-    'speakers_ui',
+    'main',
 ]

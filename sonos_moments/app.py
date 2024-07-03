@@ -1,9 +1,9 @@
-#!/usr/bin/env python3
 import argparse
 
 from nicegui import ui
 
-from sonos_moments import capture, moments_ui, speakers_ui
+from .moments import capture, moments_ui
+from .speakers import speakers_ui
 
 
 @ui.page('/')
@@ -29,7 +29,3 @@ def main(reload: bool = True) -> None:
 
 def main_without_reload() -> None:
     main(reload=False)
-
-
-if __name__ in {'__main__', '__mp_main__'}:
-    main()
