@@ -55,7 +55,10 @@ jobs:
           python-version: 3.11
 
       - name: Update version in pyproject.toml
-        run: python .github/workflows/update_pyproject.py $(echo ${GITHUB_REF/refs\/tags\//})
+        run: |
+          TAG=$(echo ${GITHUB_REF/refs\/tags\//})
+          echo "Updating version to $TAG"
+          python .github/workflows/update_pyproject.py $TAG
 
       - name: Commit and push changes
         run: |
