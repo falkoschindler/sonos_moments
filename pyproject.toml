@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "sonos-moments"
-version = "0.0.4-dev"
+version = "0.0.5-dev"
 description = "Sonos Controller based on NiceGUI"
 authors = ["Falko Schindler <mail@falkoschindler.de>"]
 license = "MIT"
