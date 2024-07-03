@@ -54,11 +54,6 @@ jobs:
         with:
           python-version: 3.11
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install requests PyYAML
-
       - name: Update version in pyproject.toml
         run: python .github/workflows/update_pyproject.py $(echo ${GITHUB_REF/refs\/tags\//})
 
