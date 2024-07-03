@@ -14,6 +14,9 @@ nicegui = "^1.4.28"
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.4.3"
 
+[tool.poetry.scripts]
+sonos-moments = "app:main_without_reload"
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"

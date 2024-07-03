@@ -51,7 +51,7 @@ This can be a Raspberry Pi, a laptop, or any other device that can run Python.
 3. Run the server:
 
    ```bash
-   python3 main.py
+   python3 app.py
    ```
 
 The web interface will automatically open in your default browser at `http://localhost:8081`.
