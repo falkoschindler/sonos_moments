@@ -8,6 +8,8 @@ Its main feature is to capture "moments", i.e. the current state of the speakers
 This way, you can easily switch between different scenarios, e.g. your favorite radio station during breakfast in the kitchen, a relaxing playlist in the living room, or a party mix in the garden - all without having to use the original Sonos app.
 Especially since their latest update, the Sonos app has become quite buggy and slow, so this is a lightweight alternative for those who just want to control their speakers.
 
+[![PyPI](https://img.shields.io/pypi/v/sonos-moments?color=dark-green)](https://pypi.org/project/sonos-moments/)
+[![PyPI downloads](https://img.shields.io/pypi/dm/sonos-moments?color=dark-green)](https://pypi.org/project/sonos-moments/)
 [![GitHub license](https://img.shields.io/github/license/falkoschindler/sonos_moments?color=orange)](https://github.com/falkoschindler/sonos_moments/blob/main/LICENSE)
 [![GitHub commit activity](https://img.shields.io/github/commit-activity/m/falkoschindler/sonos_moments)](https://github.com/falkoschindler/sonos_moments/graphs/commit-activity)
 [![GitHub issues](https://img.shields.io/github/issues/falkoschindler/sonos_moments?color=blue)](https://github.com/falkoschindler/sonos_moments/issues)
