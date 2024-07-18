@@ -47,8 +47,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
-      - name: Update version in pyproject.toml
-        run: python .github/workflows/update_pyproject.py $(echo ${GITHUB_REF/refs\/tags\//})
+      - name: Set dev version
+        run: |
+          VERSION=${{ env.VERSION }}
+          VERSION_NO_PREFIX=${VERSION#v}
+          poetry version ${VERSION_NO_PREFIX}-dev
 
       - name: Commit and push changes
         run: |
