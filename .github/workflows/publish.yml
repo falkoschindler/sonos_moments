@@ -29,7 +29,9 @@ jobs:
         run: echo "VERSION=$(echo ${GITHUB_REF/refs\/tags\//})" >> $GITHUB_ENV
 
       - name: Set version
-        run: poetry version ${{ env.VERSION }}
+        run: |
+          VERSION=${{ env.VERSION }}
+          poetry version ${VERSION#v}
 
       - name: Publish PyPI package
         env:
@@ -50,8 +52,7 @@ jobs:
       - name: Set dev version
         run: |
           VERSION=${{ env.VERSION }}
-          VERSION_NO_PREFIX=${VERSION#v}
-          poetry version ${VERSION_NO_PREFIX}-dev
+          poetry version ${VERSION#v}-dev
 
       - name: Commit and push changes
         run: |
