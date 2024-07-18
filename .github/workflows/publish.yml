@@ -49,11 +49,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
-      - name: Set dev version
-        run: |
-          VERSION=${{ env.VERSION }}
-          poetry version ${VERSION#v}-dev
-
       - name: Commit and push changes
         run: |
           git config --global user.name "github-actions[bot]"
