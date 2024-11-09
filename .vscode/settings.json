@@ -5,6 +5,8 @@
   "prettier.printWidth": 120,
   "pylint.args": [
     "--disable=C0114", // Missing module docstring
+    "--disable=C0115", // Missing class docstring
+    "--disable=C0116", // Missing function or method docstring
     "--disable=C0301" // Line too long (exceeds character limit)
   ],
   "[python]": {
