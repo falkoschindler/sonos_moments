@@ -15,11 +15,11 @@ def moments_ui(system: System) -> None:
         system.remove(moment)
         moments_ui.refresh()
 
-    with ui.grid(columns='repeat(2, auto)').classes('items-center border shadow px-4 py-2 w-full overflow-hidden'):
+    with ui.grid(columns='auto auto').classes('items-center border px-4 py-2 w-full'):
         if system.moments:
             for moment in system.moments:
                 ui.input().bind_value(moment, 'name').props('dense borderless input-class="text-lg font-bold"')
-                with ui.dropdown_button(icon='play_arrow', split=True,
+                with ui.dropdown_button(icon='sym_r_play_arrow', split=True,
                                         on_click=partial(system.play, moment)).props('flat'):
                     ui.item('Re-capture', on_click=partial(recapture, moment))
                     ui.item('Delete', on_click=partial(remove_moment, moment))

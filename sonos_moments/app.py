@@ -12,11 +12,15 @@ system = System()
 def main_page() -> None:
     ui.colors(primary='black')
 
+    def capture() -> None:
+        system.capture()
+        moments_ui.refresh()
+
     with ui.header():
         ui.label('SONOS').classes('text-2xl')
         ui.label('Moments').classes('text-2xl font-thin')
         ui.space()
-        ui.button(icon='sym_o_screenshot_region', on_click=system.capture).props('dense')
+        ui.button(icon='sym_r_screenshot_region', on_click=capture).props('dense')
 
     system.update_devices()
     speakers_ui(system)

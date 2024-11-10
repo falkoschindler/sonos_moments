@@ -19,14 +19,15 @@ def speakers_ui(system: System) -> None:
 
     with ui.tab_panels(tabs).bind_value(app.storage.user, 'group').classes('w-full'):
         for key, devices in system.device_groups.items():
-            with ui.tab_panel(key).classes('gap-x-1 border shadow w-full p-0 gap-y-0'):
+            with ui.tab_panel(key).classes('gap-x-1 border w-full p-0 gap-y-0'):
                 coordinator = next((d for d in devices if d.is_coordinator), devices[0])
-                with ui.row(align_items='center').classes('m-4'):
+                with ui.row(align_items='center').classes('p-4 w-full'):
                     with ui.button_group().props('flat'):
-                        ui.button(icon='play_arrow', on_click=coordinator.play).props('flat')
-                        ui.button(icon='pause', on_click=coordinator.pause).props('flat')
-                        ui.button(icon='stop', on_click=coordinator.stop).props('flat')
-                    with ui.button(icon='speaker_group').props('flat'):
+                        ui.button(icon='sym_r_play_arrow', on_click=coordinator.play).props('flat')
+                        ui.button(icon='sym_r_pause', on_click=coordinator.pause).props('flat')
+                        ui.button(icon='sym_r_stop', on_click=coordinator.stop).props('flat')
+                    ui.space()
+                    with ui.button(icon='sym_r_speaker_group').props('flat'):
                         with ui.menu():
                             for device in sorted(system.devices.values(),
                                                  key=lambda d: (d is not coordinator, d.player_name)):
@@ -35,10 +36,8 @@ def speakers_ui(system: System) -> None:
                                                      device=device,
                                                      coordinator=coordinator) -> None:
                                         if e.value:
-                                            print(f'Joining {device.player_name} to {coordinator.player_name}')
                                             device.join(coordinator)
                                         else:
-                                            print(f'Unjoining {device.player_name} from {coordinator.player_name}')
                                             device.unjoin()
                                         system.update_devices()
                                         speakers_ui.refresh()
@@ -48,16 +47,16 @@ def speakers_ui(system: System) -> None:
 
                 ui.separator()
 
-                with ui.grid(columns='repeat(2, auto)').classes('items-center gap-y-0 w-full px-4'):
+                with ui.grid(columns='1fr auto').classes('items-center gap-y-0 w-full px-4'):
                     for device in sorted(devices, key=lambda d: (d is not coordinator, d.player_name)):
                         ui.label(device.player_name).classes('text-lg font-bold')
                         with ui.row(align_items='center'):
                             ui.checkbox(value=not device.mute) \
                                 .on_value_change(lambda e, device=device: setattr(device, 'mute', not e.value)) \
-                                .props('dense checked-icon="volume_up" unchecked-icon="volume_off"')
-                            volume_down = ui.button(icon='remove').props('flat')
+                                .props('dense checked-icon="sym_r_volume_up" unchecked-icon="sym_r_volume_off"')
+                            volume_down = ui.button(icon='sym_r_remove').props('flat')
                             volume = ui.knob(value=device.volume, min=0, max=100, step=1, show_value=True,
                                              on_change=lambda e, device=device: setattr(device, 'volume', e.value))
-                            volume_up = ui.button(icon='add').props('flat')
+                            volume_up = ui.button(icon='sym_r_add').props('flat')
                             volume_down.on_click(lambda volume=volume: volume.set_value(volume.value - 1))
                             volume_up.on_click(lambda volume=volume: volume.set_value(volume.value + 1))
