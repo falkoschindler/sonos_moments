@@ -1,3 +1,5 @@
+import asyncio
+
 from nicegui import app, events, ui
 
 from ..model import System
@@ -32,19 +34,19 @@ def speakers_ui(system: System) -> None:
                             for device in sorted(system.devices.values(),
                                                  key=lambda d: (d is not coordinator, d.player_name)):
                                 with ui.menu_item():
-                                    def update_group(e: events.ValueChangeEventArguments,
-                                                     device=device,
-                                                     coordinator=coordinator) -> None:
+                                    async def update_group(e: events.ValueChangeEventArguments,
+                                                           device=device,
+                                                           coordinator=coordinator) -> None:
                                         if e.value:
                                             device.join(coordinator)
                                         else:
                                             device.unjoin()
+                                        await asyncio.sleep(1.0)  # HACK: wait for Sonos to update
                                         system.update_devices()
                                         speakers_ui.refresh()
                                     ui.checkbox(device.player_name, value=device in devices) \
                                         .on_value_change(update_group) \
                                         .set_enabled(device != coordinator)
-
                 ui.separator()
 
                 with ui.grid(columns='1fr auto').classes('items-center gap-y-0 w-full px-4'):
