@@ -60,3 +60,6 @@ def speakers_ui(system: System) -> None:
                             volume_up = ui.button(icon='sym_r_add').props('flat')
                             volume_down.on_click(lambda volume=volume: volume.set_value(volume.value - 1))
                             volume_up.on_click(lambda volume=volume: volume.set_value(volume.value + 1))
+
+    if tabs.value not in system.device_groups:
+        tabs.value = next(iter(system.device_groups))
