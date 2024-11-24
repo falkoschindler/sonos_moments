@@ -1,5 +1,7 @@
 .git/
 __pycache__/
+.mypy_cache/
+.nicegui/
 .DS_Store
 *.tmp
 .env

@@ -7,9 +7,10 @@ license = "MIT"
 readme = "README.md"
 
 [tool.poetry.dependencies]
+dataclasses-json = "^0.6.7"
+nicegui = "^2.7.0"
 python = "^3.11"
 soco = "^0.30.4"
-nicegui = "^1.4.29"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.4.3"
