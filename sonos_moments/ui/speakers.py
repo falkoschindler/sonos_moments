@@ -47,6 +47,16 @@ def _group_panel(system: System, group: GroupState) -> None:
             ui.button(icon='sym_r_stop', on_click=lambda: system.stop(group.coordinator_uid)).props('flat')
         ui.label().bind_text_from(group, 'description').classes('text-sm text-gray-500 truncate')
         ui.space()
+        with ui.button(icon='sym_r_radio').props('flat'), ui.menu().classes('max-h-96'):
+            if not system.favorites:
+                ui.item('No favorites found')
+            for favorite in system.favorites:
+                async def start(favorite=favorite, coordinator_uid=group.coordinator_uid) -> None:
+                    if not await system.play_favorite(favorite, coordinator_uid):
+                        ui.notify(f'"{favorite.title}" could not be started. '
+                                  'Its music service may no longer be linked to your household.',
+                                  type='warning')
+                ui.item(favorite.title, on_click=start)
         with ui.button(icon='sym_r_speaker_group').props('flat'), ui.menu():
             for player in sorted(system.state.online_players, key=lambda p: p.name):
                 with ui.menu_item():

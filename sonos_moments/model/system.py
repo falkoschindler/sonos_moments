@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -10,7 +11,10 @@ from nicegui import app
 from .events import Subscriptions
 from .moment import Moment
 from .registry import Registry
+from .source import Favorite, Source
 from .state import GroupState, SystemState
+
+log = logging.getLogger(__name__)
 
 soco.config.REQUEST_TIMEOUT = 5.0  # the default of 20 s would freeze the app whenever a speaker is unplugged
 
@@ -27,6 +31,22 @@ class Pending:
     deadline: float
 
 
+def _play(device: soco.SoCo) -> None:
+    """Start playback, retrying while the speaker is still busy with a fresh stream.
+
+    A speaker that has just been handed a new radio URI answers "transition not available"
+    for a moment. Blocking; call from a thread.
+    """
+    for attempt in range(4):
+        try:
+            device.play()
+            return
+        except soco.exceptions.SoCoUPnPException:
+            if attempt == 3:
+                raise
+            time.sleep(1.0)
+
+
 class System:
     """Owns the connection to the speakers and keeps :class:`SystemState` up to date.
 
@@ -40,6 +60,9 @@ class System:
         self.subscriptions = Subscriptions()
         self.devices: dict[str, soco.SoCo] = {}
         self.moments: list[Moment] = []
+        self.favorites: list[Favorite] = []
+        self.discarded_moments = 0
+        self.unresolved: set[str] = set()
         self.on_topology_change: list[Callable[[], None]] = []
         self._zone_group_state = ''
         self._pending: dict[tuple[str, str], Pending] = {}
@@ -48,14 +71,33 @@ class System:
     async def start(self) -> None:
         """Restore what we know from storage and connect to the speakers."""
         self.registry.load(app.storage.general.get('devices', []))
-        self.moments = [Moment.from_dict(moment) for moment in app.storage.general.get('moments', [])]
+        self._load_moments()
         for entry in self.registry.entries.values():
             self.state.player(entry.uid, name=entry.name, ip=entry.ip)
         await self._connect(self.registry.connect)
 
+    def _load_moments(self) -> None:
+        """Load the stored moments, dropping the ones from before sources were introduced."""
+        self.moments = []
+        self.discarded_moments = 0
+        for data in app.storage.general.get('moments', []):
+            try:
+                self.moments.append(Moment.from_dict(data))
+            except Exception:
+                self.discarded_moments += 1
+
     async def search(self) -> None:
         """Actively look for speakers, e.g. after a router change."""
         await self._connect(self.registry.search)
+
+    async def load_favorites(self) -> None:
+        """Read the Sonos favorites, which are the most robust way to point at a source."""
+        if not self.devices:
+            return
+        favorites = await self._read(Favorite.read, next(iter(self.devices.values())))
+        if favorites is not None:
+            self.favorites = favorites
+            self._notify()
 
     async def _connect(self, connect: Callable[[], list[soco.SoCo]]) -> None:
         self.state.searching = True
@@ -69,6 +111,7 @@ class System:
         finally:
             self.state.searching = False
         await self.refresh()
+        await self.load_favorites()
 
     async def refresh(self) -> None:
         """Read the current state of all speakers in parallel."""
@@ -241,7 +284,7 @@ class System:
         self._pending[uid, field] = Pending(value=value, deadline=time.monotonic() + ECHO_TIMEOUT)
 
     async def play(self, uid: str) -> None:
-        await self._write(lambda device: device.play(), uid)
+        await self._write(_play, uid)
 
     async def pause(self, uid: str) -> None:
         await self._write(lambda device: device.pause(), uid)
@@ -256,15 +299,23 @@ class System:
     async def unjoin(self, uid: str) -> None:
         await self._write(lambda device: device.unjoin(), uid)
 
-    async def _write(self, command: Callable[[soco.SoCo], None], uid: str) -> None:
-        """Send a command to a speaker without blocking the event loop."""
+    async def _write(self, command: Callable[[soco.SoCo], None], uid: str) -> bool:
+        """Send a command to a speaker without blocking the event loop. Returns whether it worked."""
         device = self.devices.get(uid)
         if device is None:
-            return
+            return False
         try:
             await asyncio.to_thread(command, device)
+            return True
+        except soco.exceptions.SoCoUPnPException as e:
+            # the speaker is fine but refused the command, e.g. because a music service is no
+            # longer linked to the household and its URIs have become invalid
+            log.warning('%s rejected a command: %s', self.state.player(uid).name, e)
+            return False
         except Exception:
+            log.exception('%s is unreachable', self.state.player(uid).name)
             self.state.player(uid).online = False
+            return False
 
     async def play_moment(self, moment: Moment) -> None:
         """Restore a moment: first the grouping, then the volumes, then the playback.
@@ -282,9 +333,18 @@ class System:
                                for member_uid, member in group.members.items()
                                for command in (self.set_volume(member_uid, member.volume),
                                                self.set_mute(member_uid, member.mute))))
+        self.unresolved.discard(moment.uid)
         for group in moment.groups:
-            if group.uri:
-                await self._write(lambda device, uri=group.uri: device.play_uri(uri), group.coordinator_uid)
+            resolved = group.source.resolve(self.favorites)
+            if group.source.kind == 'none':
+                pass
+            elif resolved is None:
+                self.unresolved.add(moment.uid)  # the favorite has disappeared
+            else:
+                uri, meta = resolved
+                if not await self._write(lambda device, uri=uri, meta=meta: Source.select(device, uri, meta),
+                                         group.coordinator_uid):
+                    self.unresolved.add(moment.uid)  # the speaker refused the source, e.g. a dead service
             if group.state == 'PLAYING':
                 await self.play(group.coordinator_uid)
             elif group.state == 'PAUSED_PLAYBACK':
@@ -293,15 +353,24 @@ class System:
                 await self.stop(group.coordinator_uid)
         await self.refresh()
 
+    async def play_favorite(self, favorite: Favorite, coordinator_uid: str) -> bool:
+        """Start a favorite on a group, so that a source can be chosen without the Sonos app."""
+        if not await self._write(lambda device: Source.select(device, favorite.uri, favorite.meta), coordinator_uid):
+            return False
+        await self.play(coordinator_uid)
+        return True
+
     async def capture(self) -> None:
-        moment = await asyncio.to_thread(Moment.capture, list(self.devices.values()),
+        moment = await asyncio.to_thread(Moment.capture, list(self.devices.values()), self.favorites,
                                          f'Moment #{len(self.moments) + 1}')
         self.moments.append(moment)
         self.save()
 
     async def recapture(self, moment: Moment) -> None:
-        new_moment = await asyncio.to_thread(Moment.capture, list(self.devices.values()), moment.name)
+        new_moment = await asyncio.to_thread(Moment.capture, list(self.devices.values()), self.favorites, moment.name)
+        new_moment.uid = moment.uid
         self.moments[self.moments.index(moment)] = new_moment
+        self.unresolved.discard(moment.uid)
         self.save()
 
     def remove(self, moment: Moment) -> None:
