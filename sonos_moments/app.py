@@ -1,4 +1,5 @@
 import argparse
+from pathlib import Path
 
 from nicegui import app, ui
 
@@ -47,7 +48,8 @@ def main(reload: bool = True) -> None:
     parser = argparse.ArgumentParser('Sonos Moments', description='Control Sonos speakers in a local network.')
     parser.add_argument('--port', type=int, default=8080)
     args = parser.parse_args()
-    ui.run(title='Sonos Moments', favicon='icon.png', port=args.port, reload=reload, storage_secret='sonos-moments')
+    ui.run(title='Sonos Moments', favicon=Path(__file__).parent / 'icon.png',
+           port=args.port, reload=reload, storage_secret='sonos-moments')
 
 
 def main_without_reload() -> None:
