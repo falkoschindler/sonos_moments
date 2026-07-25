@@ -1,57 +1,211 @@
-
-from itertools import groupby
+import asyncio
+from collections.abc import Callable
+from typing import Any
 
 import soco
 from nicegui import app
 
 from .moment import Moment
+from .registry import Registry
+from .state import GroupState, SystemState
+
+soco.config.REQUEST_TIMEOUT = 5.0  # the default of 20 s would freeze the app whenever a speaker is unplugged
+
+Topology = list[tuple[str, list[str]]]
 
 
 class System:
+    """Owns the connection to the speakers and keeps :class:`SystemState` up to date.
+
+    Every call into SoCo blocks, so everything that touches the network runs in a thread.
+    The UI only ever reads from ``state`` and therefore renders without any network access.
+    """
 
     def __init__(self) -> None:
-        self.moments = [Moment.from_dict(moment) for moment in app.storage.general.get('moments', [])]
+        self.state = SystemState()
+        self.registry = Registry()
         self.devices: dict[str, soco.SoCo] = {}
+        self.moments: list[Moment] = []
+        self.on_topology_change: list[Callable[[], None]] = []
 
-    @property
-    def device_groups(self) -> dict[str, list[soco.SoCo]]:
-        return {k: list(v) for k, v in groupby(sorted(list(self.devices.values()),
-                                                      key=lambda d: d.group.uid), key=lambda d: d.group.uid)}
+    async def start(self) -> None:
+        """Restore what we know from storage and connect to the speakers."""
+        self.registry.load(app.storage.general.get('devices', []))
+        self.moments = [Moment.from_dict(moment) for moment in app.storage.general.get('moments', [])]
+        for entry in self.registry.entries.values():
+            self.state.player(entry.uid, name=entry.name, ip=entry.ip)
+        await self._connect(self.registry.connect)
 
-    def update_devices(self) -> None:
-        self.devices = {d.uid: d for d in soco.discover()}
+    async def search(self) -> None:
+        """Actively look for speakers, e.g. after a router change."""
+        await self._connect(self.registry.search)
 
-    def play(self, moment: Moment) -> None:
+    async def _connect(self, connect: Callable[[], list[soco.SoCo]]) -> None:
+        self.state.searching = True
+        self._notify()
+        try:
+            devices = await asyncio.to_thread(connect)
+            self.devices = {device.uid: device for device in devices}
+            app.storage.general['devices'] = self.registry.dump()
+            for device in devices:
+                self.state.player(device.uid, name=device.player_name, ip=device.ip_address)
+        finally:
+            self.state.searching = False
+        await self.refresh()
+
+    async def refresh(self) -> None:
+        """Read the current state of all speakers in parallel."""
+        if not self.devices:
+            self._notify()
+            return
+        topology = await self._read(self._read_topology)
+        readings = await asyncio.gather(*(self._read(self._read_player, device) for device in self.devices.values()))
+        for reading in readings:
+            if reading is None:
+                continue
+            uid, volume, mute = reading
+            player = self.state.player(uid)
+            player.volume = volume
+            player.mute = mute
+        online = {reading[0] for reading in readings if reading is not None}
+        for player in self.state.players.values():
+            player.online = player.uid in online
+        if topology is None:
+            topology = self._current_topology() if online else []
+        await self._apply_topology(topology)
+
+    async def _apply_topology(self, topology: Topology) -> None:
+        """Update the groups, rebuilding them only when the grouping actually changed."""
+        changed = self._signature(topology) != self._signature(self._current_topology())
+        if changed:
+            self.state.groups = [GroupState(coordinator_uid=coordinator_uid, member_uids=member_uids)
+                                 for coordinator_uid, member_uids in topology]
+            self.state.groups.sort(key=lambda group: self.state.player(group.coordinator_uid).name)
+        playbacks = await asyncio.gather(*(self._read(self._read_playback, group.coordinator_uid)
+                                           for group in self.state.groups))
+        for group, playback in zip(self.state.groups, playbacks, strict=True):
+            if playback is None:
+                continue
+            group.transport_state, group.channel, group.title, group.artist = playback
+        if changed:
+            self._notify()
+
+    def _current_topology(self) -> Topology:
+        return [(group.coordinator_uid, group.member_uids) for group in self.state.groups]
+
+    @staticmethod
+    def _signature(topology: Topology) -> set[tuple[str, tuple[str, ...]]]:
+        return {(coordinator_uid, tuple(sorted(member_uids))) for coordinator_uid, member_uids in topology}
+
+    def _notify(self) -> None:
+        for callback in self.on_topology_change:
+            callback()
+
+    async def _read(self, read: Callable, *args) -> Any:
+        """Run a blocking read in a thread, treating an unreachable speaker as missing data."""
+        try:
+            return await asyncio.to_thread(read, *args)
+        except Exception:
+            return None
+
+    def _read_topology(self) -> Topology:
+        anchor = next(iter(self.devices.values()))
+        groups = [(group.coordinator.uid, [member.uid for member in group.members if member.uid in self.devices])
+                  for group in anchor.all_groups]
+        return [(coordinator_uid, member_uids) for coordinator_uid, member_uids in groups if member_uids]
+
+    @staticmethod
+    def _read_player(device: soco.SoCo) -> tuple[str, int, bool]:
+        return device.uid, device.volume, device.mute
+
+    def _read_playback(self, coordinator_uid: str) -> tuple[str, str, str, str]:
+        device = self.devices[coordinator_uid]
+        transport = device.get_current_transport_info().get('current_transport_state', 'STOPPED')
+        media = device.get_current_media_info()
+        track = device.get_current_track_info()
+        return transport, media.get('channel', ''), track.get('title', ''), track.get('artist', '')
+
+    async def set_volume(self, uid: str, volume: int) -> None:
+        player = self.state.player(uid)
+        if player.volume == volume:
+            return  # nothing to do, and it keeps UI bindings from echoing values back to the speaker
+        player.volume = volume
+        await self._write(lambda device: setattr(device, 'volume', volume), uid)
+
+    async def set_mute(self, uid: str, mute: bool) -> None:
+        player = self.state.player(uid)
+        if player.mute == mute:
+            return
+        player.mute = mute
+        await self._write(lambda device: setattr(device, 'mute', mute), uid)
+
+    async def play(self, uid: str) -> None:
+        await self._write(lambda device: device.play(), uid)
+
+    async def pause(self, uid: str) -> None:
+        await self._write(lambda device: device.pause(), uid)
+
+    async def stop(self, uid: str) -> None:
+        await self._write(lambda device: device.stop(), uid)
+
+    async def join(self, uid: str, coordinator_uid: str) -> None:
+        coordinator = self.devices[coordinator_uid]
+        await self._write(lambda device: device.join(coordinator), uid)
+
+    async def unjoin(self, uid: str) -> None:
+        await self._write(lambda device: device.unjoin(), uid)
+
+    async def _write(self, command: Callable[[soco.SoCo], None], uid: str) -> None:
+        """Send a command to a speaker without blocking the event loop."""
+        device = self.devices.get(uid)
+        if device is None:
+            return
+        try:
+            await asyncio.to_thread(command, device)
+        except Exception:
+            self.state.player(uid).online = False
+
+    async def play_moment(self, moment: Moment) -> None:
+        """Restore a moment: first the grouping, then the volumes, then the playback.
+
+        The order matters: members have to be in place before the coordinator starts playing,
+        otherwise they miss the beginning.
+        """
+        await asyncio.gather(*(self.unjoin(group.coordinator_uid) for group in moment.groups))
+        await asyncio.gather(*(self.join(member_uid, group.coordinator_uid)
+                               for group in moment.groups
+                               for member_uid in group.members
+                               if member_uid != group.coordinator_uid))
+        await asyncio.gather(*(command
+                               for group in moment.groups
+                               for member_uid, member in group.members.items()
+                               for command in (self.set_volume(member_uid, member.volume),
+                                               self.set_mute(member_uid, member.mute))))
         for group in moment.groups:
-            coordinator = self.devices[group.coordinator_uid]
-            for member_uid, member in group.members.items():
-                device = self.devices[member_uid]
-                device.volume = member.volume
-                device.mute = member.mute
-                if member_uid == group.coordinator_uid:
-                    device.unjoin()
-                    if group.uri:
-                        device.play_uri(group.uri)
-                    if group.state == 'PLAYING':
-                        device.play()
-                    if group.state == 'PAUSED_PLAYBACK':
-                        device.pause()
-                    if group.state == 'STOPPED':
-                        device.stop()
-                else:
-                    device.join(coordinator)
+            if group.uri:
+                await self._write(lambda device, uri=group.uri: device.play_uri(uri), group.coordinator_uid)
+            if group.state == 'PLAYING':
+                await self.play(group.coordinator_uid)
+            elif group.state == 'PAUSED_PLAYBACK':
+                await self.pause(group.coordinator_uid)
+            elif group.state == 'STOPPED':
+                await self.stop(group.coordinator_uid)
+        await self.refresh()
 
-    def capture(self) -> None:
-        self.moments.append(Moment.capture(f'Moment #{len(self.moments) + 1}'))
-        self._save()
+    async def capture(self) -> None:
+        moment = await asyncio.to_thread(Moment.capture, list(self.devices.values()),
+                                         f'Moment #{len(self.moments) + 1}')
+        self.moments.append(moment)
+        self.save()
 
-    def recapture(self, moment: Moment) -> None:
-        self.moments[self.moments.index(moment)] = Moment.capture(moment.name)
-        self._save()
+    async def recapture(self, moment: Moment) -> None:
+        new_moment = await asyncio.to_thread(Moment.capture, list(self.devices.values()), moment.name)
+        self.moments[self.moments.index(moment)] = new_moment
+        self.save()
 
     def remove(self, moment: Moment) -> None:
         self.moments.remove(moment)
-        self._save()
+        self.save()
 
-    def _save(self) -> None:
-        app.storage.general.update(moments=[m.to_dict() for m in self.moments])
+    def save(self) -> None:
+        app.storage.general['moments'] = [moment.to_dict() for moment in self.moments]

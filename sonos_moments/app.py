@@ -1,29 +1,38 @@
 import argparse
 
-from nicegui import ui
+from nicegui import app, ui
 
 from .model import System
 from .ui import moments_ui, speakers_ui
 
+REFRESH_INTERVAL = 5.0
+
 system = System()
+
+
+@app.on_startup
+async def startup() -> None:
+    system.on_topology_change.append(speakers_ui.refresh)
+    await system.start()
+    app.timer(REFRESH_INTERVAL, system.refresh)
 
 
 @ui.page('/')
 def main_page() -> None:
     ui.colors(primary='black')
 
-    def capture() -> None:
-        system.capture()
+    async def capture() -> None:
+        await system.capture()
         moments_ui.refresh()
 
     with ui.header():
         ui.label('SONOS').classes('text-2xl')
         ui.label('Moments').classes('text-2xl font-thin')
         ui.space()
+        ui.button(icon='sym_r_search', on_click=system.search).props('dense flat color=white')
         ui.button(icon='sym_r_screenshot_region', on_click=capture).props('dense')
 
-    system.update_devices()
-    speakers_ui(system)
+    speakers_ui(system, app.storage.user)
     moments_ui(system)
 
 

@@ -16,13 +16,16 @@ class Moment:
     groups: list[Group]
 
     @classmethod
-    def capture(cls, name: str = '') -> Self:
-        devices = list(soco.discover())
-        if not devices:
-            return cls(uid=str(uuid4()), name=name, groups=[])
+    def capture(cls, devices: list[soco.SoCo], name: str = '') -> Self:
+        """Capture the current state of the given speakers.
 
+        Blocking; call from a thread.
+        """
         moment = cls(uid=str(uuid4()), name=name, groups=[])
-        for group in next(iter(devices)).all_groups:
+        if not devices:
+            return moment
+
+        for group in devices[0].all_groups:
             coordinator = group.coordinator
             moment.groups.append(Group(
                 coordinator_uid=coordinator.uid,

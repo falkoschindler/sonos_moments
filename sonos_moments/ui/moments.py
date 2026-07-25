@@ -7,8 +7,8 @@ from ..model import Moment, System
 
 @ui.refreshable
 def moments_ui(system: System) -> None:
-    def recapture(moment: Moment) -> None:
-        system.recapture(moment)
+    async def recapture(moment: Moment) -> None:
+        await system.recapture(moment)
         moments_ui.refresh()
 
     def remove_moment(moment: Moment) -> None:
@@ -18,9 +18,10 @@ def moments_ui(system: System) -> None:
     with ui.grid(columns='auto auto').classes('items-center border px-4 py-2 w-full'):
         if system.moments:
             for moment in system.moments:
-                ui.input().bind_value(moment, 'name').props('dense borderless input-class="text-lg font-bold"')
+                ui.input(on_change=system.save).bind_value(moment, 'name') \
+                    .props('dense borderless input-class="text-lg font-bold"')
                 with ui.dropdown_button(icon='sym_r_play_arrow', split=True,
-                                        on_click=partial(system.play, moment)).props('flat'):
+                                        on_click=partial(system.play_moment, moment)).props('flat'):
                     ui.item('Re-capture', on_click=partial(recapture, moment))
                     ui.item('Delete', on_click=partial(remove_moment, moment))
         else:
