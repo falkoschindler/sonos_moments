@@ -2,6 +2,16 @@
 
 Ziel: Live-Updates statt Polling, spürbar schnellere UI, robuster Dauerbetrieb auf einem Raspberry Pi Zero 2 W. Der Umbau betrifft vor allem die Infrastruktur; Feature-Wünsche kommen separat dazu.
 
+## Stand
+
+Auf Branch `rebuild-event-driven` umgesetzt und gegen das laufende System verifiziert: Etappe 1 (Registry und State-Layer), Etappe 2 (Event-Subscriptions), Etappe 3 (Schreibpfad) und der Datenmodell-Teil von Etappe 4 (Quellen-Referenzen, Favoriten-Menü). Offen sind der UI-Neubau, die TuneIn-Suche, Watchdog und Deployment sowie optional SoundCloud und Mixcloud.
+
+Zwei Erkenntnisse aus der Umsetzung, die vorher nicht auf dem Schirm waren:
+
+**Die Favoriten mit `sid=333` sind tot.** Alle Favoriten des alten TuneIn-(New)-Dienstes mit `sn=8` — 1LIVE, FluxFM, WDR 2/3/5, SomaFM und die übrigen — werden von den Speakern mit `UPnP Error 402 Invalid Args` abgelehnt. Der Dienst ist offenbar nicht mehr mit dem Haushalt verknüpft. Was funktioniert, sind die Favoriten mit `sid=303` (Sonos Radio, `sn=5`), etwa radioeins, House FM und Klassik Radio Piano. Das ist vermutlich derselbe Vorgang, der die alten Moments zerstört hat. Die betroffenen Favoriten müssten in der Sonos-App einmal neu angelegt werden; die App sagt jetzt wenigstens deutlich, dass es an der Verknüpfung liegt.
+
+**Nach dem Setzen einer neuen Stream-Quelle braucht der Speaker einen Moment.** Ein sofortiges `play()` scheitert an `UPnP Error 701 Transition not available`, mit etwa einer Sekunde Abstand klappt es. Deshalb sind Quelle setzen und Abspielen getrennt, mit Wiederholung.
+
 ## Ausgangslage
 
 Gemessen am Live-System (4 Speaker, Sonos 86.8-78270, S1/Play:1 u.a.):
@@ -171,12 +181,12 @@ Der UI-Neubau gehört zeitlich zu Etappe 4: Erst dann steht das Datenmodell, das
 
 ## Umsetzungsreihenfolge
 
-1. **State-Layer und Registry.** Geräte-Registry über UIDs mit IP-Cache und Hintergrund-Suche, prozessweiter State, UI rendert ohne Netzwerk-Calls, alle SoCo-Aufrufe in `to_thread`. Danach ist der Seitenaufruf instantan — größter Effekt, kleinster Eingriff.
-2. **Event-Subscriptions.** Abos für die vier Services, Queue-Drain per Timer, Umhängen bei Topologie-Änderungen, gezielte Bindings statt Full-Refresh. Damit kommen die Live-Updates.
-3. **Schreibpfad.** Echo-Suppression, Drosselung, `sleep(1.0)`-Hack entfernen.
-4. **Moments und Quellen.** Quellen-Referenz statt Transport-URI, Favoriten-Browser, queue-erhaltendes Capture/Restore, korrekte Restore-Reihenfolge, Rename-Persistenz fixen. Moments werden hier vom reinen Mitschnitt zum editierbaren Objekt.
+1. ~~**State-Layer und Registry.**~~ *(erledigt)* Geräte-Registry über UIDs mit IP-Cache und Hintergrund-Suche, prozessweiter State, UI rendert ohne Netzwerk-Calls, alle SoCo-Aufrufe in `to_thread`.
+2. ~~**Event-Subscriptions.**~~ *(erledigt)* Abos für RenderingControl, AVTransport und ZoneGroupTopology, Queue-Drain per Timer, Umhängen bei Topologie-Änderungen, Bindings statt Full-Refresh.
+3. ~~**Schreibpfad.**~~ *(erledigt)* Echo-Suppression, Drosselung, `sleep(1.0)`-Hack entfernt.
+4. **Moments und Quellen.** Quellen-Referenz statt Transport-URI, Favoriten-Menü und korrekte Restore-Reihenfolge sind erledigt. Offen: der Moment-Editor, queue-erhaltendes Capture für Playlists und der UI-Neubau.
 5. **TuneIn-Suche.** Stöbern und Suchen nach Radiosendern direkt in der App.
-6. **Watchdog und Deployment.** Resubscribe-Logik, stale-Kennzeichnung, systemd-Unit, Powersave, PWA-Manifest.
+6. **Watchdog und Deployment.** Stale-Kennzeichnung, systemd-Unit, Powersave, PWA-Manifest. Die Resubscribe-Logik steckt bereits im Sync der Subscriptions.
 7. **Optional: SoundCloud und Mixcloud.** Auth-Flow mit Token-Store.
 
 Etappen 1 bis 3 hängen inhaltlich zusammen und ergeben zusammen den eigentlichen Umbau; danach ist Etappe 4 der Teil mit dem größten Alltagsnutzen.
