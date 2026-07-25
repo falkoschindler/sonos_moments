@@ -55,7 +55,7 @@ def _group_panel(system: System, group: GroupState) -> None:
                             await system.join(uid, group.coordinator_uid)
                         else:
                             await system.unjoin(uid)
-                        await system.refresh()
+                        # no refresh needed: the speakers report the new grouping as an event
                     ui.checkbox(player.name, value=player.uid in group.member_uids) \
                         .on_value_change(update_group) \
                         .set_enabled(player.uid != group.coordinator_uid)

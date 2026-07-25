@@ -1,5 +1,7 @@
 import asyncio
+import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 import soco
@@ -12,7 +14,17 @@ from .state import GroupState, SystemState
 
 soco.config.REQUEST_TIMEOUT = 5.0  # the default of 20 s would freeze the app whenever a speaker is unplugged
 
+WRITE_INTERVAL = 0.1  # minimum distance between two commands to the same speaker while dragging a knob
+ECHO_TIMEOUT = 1.0  # how long a speaker may keep reporting outdated values after we have written
+
 Topology = list[tuple[str, list[str]]]
+
+
+@dataclass(kw_only=True, slots=True)
+class Pending:
+    """A value we have written and are still waiting to be confirmed by an event."""
+    value: Any
+    deadline: float
 
 
 class System:
@@ -30,6 +42,8 @@ class System:
         self.moments: list[Moment] = []
         self.on_topology_change: list[Callable[[], None]] = []
         self._zone_group_state = ''
+        self._pending: dict[tuple[str, str], Pending] = {}
+        self._writers: set[str] = set()
 
     async def start(self) -> None:
         """Restore what we know from storage and connect to the speakers."""
@@ -98,9 +112,27 @@ class System:
     def _apply_rendering(self, uid: str, variables: dict) -> None:
         player = self.state.player(uid)
         if 'volume' in variables:
-            player.volume = int(variables['volume']['Master'])
+            volume = int(variables['volume']['Master'])
+            if self._accept(uid, 'volume', volume):
+                player.volume = volume
         if 'mute' in variables:
-            player.mute = variables['mute']['Master'] == '1'
+            mute = variables['mute']['Master'] == '1'
+            if self._accept(uid, 'mute', mute):
+                player.mute = mute
+
+    def _accept(self, uid: str, field: str, value: Any) -> bool:
+        """Decide whether an incoming value is news or just an echo of what we are writing.
+
+        While a knob is being dragged the speaker keeps reporting the values it has already
+        passed. Applying those would make the knob jump backwards under the finger.
+        """
+        pending = self._pending.get((uid, field))
+        if pending is None:
+            return True
+        if pending.value == value or time.monotonic() > pending.deadline:
+            del self._pending[uid, field]
+            return True
+        return False
 
     def _apply_playback(self, uid: str, variables: dict) -> None:
         group = next((group for group in self.state.groups if group.coordinator_uid == uid), None)
@@ -175,14 +207,38 @@ class System:
         if player.volume == volume:
             return  # nothing to do, and it keeps UI bindings from echoing values back to the speaker
         player.volume = volume
-        await self._write(lambda device: setattr(device, 'volume', volume), uid)
+        self._expect(uid, 'volume', volume)
+        await self._write_volume(uid)
+
+    async def _write_volume(self, uid: str) -> None:
+        """Write the current volume, coalescing the flood of values a dragged knob produces.
+
+        Only one writer runs per speaker. It keeps going as long as the target moves, so the
+        last value always reaches the speaker without sending every single step on the way.
+        """
+        if uid in self._writers:
+            return
+        self._writers.add(uid)
+        try:
+            while True:
+                volume = self.state.player(uid).volume
+                await self._write(lambda device, volume=volume: setattr(device, 'volume', volume), uid)
+                await asyncio.sleep(WRITE_INTERVAL)
+                if self.state.player(uid).volume == volume:
+                    return
+        finally:
+            self._writers.discard(uid)
 
     async def set_mute(self, uid: str, mute: bool) -> None:
         player = self.state.player(uid)
         if player.mute == mute:
             return
         player.mute = mute
+        self._expect(uid, 'mute', mute)
         await self._write(lambda device: setattr(device, 'mute', mute), uid)
+
+    def _expect(self, uid: str, field: str, value: Any) -> None:
+        self._pending[uid, field] = Pending(value=value, deadline=time.monotonic() + ECHO_TIMEOUT)
 
     async def play(self, uid: str) -> None:
         await self._write(lambda device: device.play(), uid)
