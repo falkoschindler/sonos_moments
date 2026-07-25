@@ -5,7 +5,8 @@ from nicegui import app, ui
 from .model import System
 from .ui import moments_ui, speakers_ui
 
-REFRESH_INTERVAL = 5.0
+EVENT_INTERVAL = 0.1  # how often the queues filled by the event listener thread are drained
+REFRESH_INTERVAL = 60.0  # safety net in case we ever miss an event
 
 system = System()
 
@@ -14,7 +15,13 @@ system = System()
 async def startup() -> None:
     system.on_topology_change.append(speakers_ui.refresh)
     await system.start()
+    app.timer(EVENT_INTERVAL, system.handle_events)
     app.timer(REFRESH_INTERVAL, system.refresh)
+
+
+@app.on_shutdown
+async def shutdown() -> None:
+    await system.shutdown()
 
 
 @ui.page('/')

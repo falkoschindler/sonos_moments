@@ -5,6 +5,7 @@ from typing import Any
 import soco
 from nicegui import app
 
+from .events import Subscriptions
 from .moment import Moment
 from .registry import Registry
 from .state import GroupState, SystemState
@@ -24,9 +25,11 @@ class System:
     def __init__(self) -> None:
         self.state = SystemState()
         self.registry = Registry()
+        self.subscriptions = Subscriptions()
         self.devices: dict[str, soco.SoCo] = {}
         self.moments: list[Moment] = []
         self.on_topology_change: list[Callable[[], None]] = []
+        self._zone_group_state = ''
 
     async def start(self) -> None:
         """Restore what we know from storage and connect to the speakers."""
@@ -73,6 +76,44 @@ class System:
         if topology is None:
             topology = self._current_topology() if online else []
         await self._apply_topology(topology)
+        await asyncio.to_thread(self.subscriptions.sync, self.devices,
+                                {group.coordinator_uid for group in self.state.groups})
+
+    async def handle_events(self) -> None:
+        """Apply what the speakers have pushed to us. Called frequently, must stay cheap."""
+        topology_changed = False
+        for event in self.subscriptions.drain():
+            if event.service == 'renderingControl':
+                self._apply_rendering(event.uid, event.variables)
+            elif event.service == 'avTransport':
+                self._apply_playback(event.uid, event.variables)
+            elif event.service == 'zoneGroupTopology':
+                zone_group_state = str(event.variables.get('zone_group_state', ''))
+                if zone_group_state != self._zone_group_state:
+                    self._zone_group_state = zone_group_state
+                    topology_changed = True
+        if topology_changed:
+            await self.refresh()
+
+    def _apply_rendering(self, uid: str, variables: dict) -> None:
+        player = self.state.player(uid)
+        if 'volume' in variables:
+            player.volume = int(variables['volume']['Master'])
+        if 'mute' in variables:
+            player.mute = variables['mute']['Master'] == '1'
+
+    def _apply_playback(self, uid: str, variables: dict) -> None:
+        group = next((group for group in self.state.groups if group.coordinator_uid == uid), None)
+        if group is None:
+            return  # events from a speaker that is no longer a coordinator
+        if 'transport_state' in variables:
+            group.transport_state = variables['transport_state'] or 'STOPPED'
+        if 'av_transport_uri_meta_data' in variables:
+            group.channel = getattr(variables['av_transport_uri_meta_data'], 'title', '') or ''
+        if 'current_track_meta_data' in variables:
+            track = variables['current_track_meta_data']
+            group.title = getattr(track, 'title', '') or ''
+            group.artist = getattr(track, 'creator', '') or ''
 
     async def _apply_topology(self, topology: Topology) -> None:
         """Update the groups, rebuilding them only when the grouping actually changed."""
@@ -110,6 +151,10 @@ class System:
 
     def _read_topology(self) -> Topology:
         anchor = next(iter(self.devices.values()))
+        # SoCo stops polling the topology as soon as a ZoneGroupTopology subscription exists and
+        # expects the subscriber to keep the cache up to date, so we hand it a fresh payload.
+        payload = anchor.zoneGroupTopology.GetZoneGroupState()['ZoneGroupState']
+        anchor.zone_group_state.process_payload(payload=payload, source='poll', source_ip=anchor.ip_address)
         groups = [(group.coordinator.uid, [member.uid for member in group.members if member.uid in self.devices])
                   for group in anchor.all_groups]
         return [(coordinator_uid, member_uids) for coordinator_uid, member_uids in groups if member_uids]
@@ -209,3 +254,7 @@ class System:
 
     def save(self) -> None:
         app.storage.general['moments'] = [moment.to_dict() for moment in self.moments]
+
+    async def shutdown(self) -> None:
+        """Release the subscriptions, so the speakers stop sending events into the void."""
+        await asyncio.to_thread(self.subscriptions.stop)
