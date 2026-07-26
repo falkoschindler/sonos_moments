@@ -107,6 +107,14 @@ Aufgelöst wird erst beim Abspielen. Lässt sich eine Quelle nicht mehr auflöse
 
 Ein Moment ist ausdrücklich eine **Aktion**, kein Zustand: Er wird abgefeuert und danach nicht weiter beobachtet. Es gibt keinen Abgleich zwischen aktueller Situation und gespeicherten Moments und damit auch keinen „aktiven" Moment — das erspart uns die unangenehme Frage, wie ähnlich zwei Lautstärke-Sätze sein müssen, um als derselbe Moment zu gelten.
 
+Beim Abspielen wird trotzdem verglichen, allerdings nur einmalig und nur, um Arbeit zu sparen: Statt die Gruppierung stumpf abzureißen und neu aufzubauen, berechnet eine reine Funktion `plan(moment, state, favorites)` die Differenz zwischen Soll und Ist und gibt nur die aus, was sich tatsächlich ändern muss. Drei Regeln machen das allgemein tragfähig:
+
+- **Wer koordiniert, ist egal.** Stimmt die Mitgliedermenge einer Gruppe, wird sie akzeptiert, auch wenn ein anderer Speaker die Rolle des Koordinators hat. Das ist für den Nutzer unsichtbar und würde sonst ständig unnötige Neuaufbauten auslösen. Die Quelle geht dann an den aktuellen Koordinator.
+- **Nur überspringen, wenn Gleichheit bewiesen ist.** Eine bereits aufgelöste Stream-URL lässt sich nicht gegen einen Favoriten matchen; in dem Fall wird die Quelle neu gesetzt. Im Zweifel handeln, nicht raten — schlimmstenfalls landet man beim alten Verhalten.
+- **Ein Moment fasst nur an, was er nennt.** Nicht genannte Speaker bleiben unberührt. Einzige unvermeidbare Ausnahme: Wer mit einem genannten Speaker in einer Gruppe hängt und dort nicht hingehört, muss sie verlassen.
+
+Weil der Abgleich nur so gut ist wie das Bild, das ihm zugrunde liegt, läuft vorher ein Refresh. Und weil die Funktion rein ist, ist sie ohne Speaker testbar — siehe `tests/test_plan.py`.
+
 Beim Restore hat der aktuelle Ansatz zusätzlich einen echten Fehler: `play_uri(group.uri)` ersetzt die Queue durch einen einzelnen Track. Wer aus einer Playlist hörte, verliert sie. Richtig ist der Weg, den `soco.snapshot.Snapshot` intern geht — Wiedergabe relativ zur Queue über `x-rincon-queue:<UID>#0` plus Tracknummer und Position, mit Sonderfall für Radio-Streams. `Snapshot` selbst ist nicht serialisierbar und taugt daher nicht für persistierte Moments, aber die Logik übernehmen wir.
 
 Ebenfalls zu korrigieren ist die Reihenfolge beim Restore: erst die komplette Topologie herstellen (alle `unjoin`/`join`), dann Volumes und Mute setzen, dann Transport starten. Aktuell startet der Koordinator die Wiedergabe, bevor die Mitglieder beigetreten sind.

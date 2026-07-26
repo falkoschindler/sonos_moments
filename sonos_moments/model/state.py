@@ -24,6 +24,7 @@ class GroupState:
     coordinator_uid: str
     member_uids: list[str]
     transport_state: str = 'STOPPED'
+    uri: str = ''  # the source that was started, needed to tell whether a moment has to change it
     channel: str = ''
     title: str = ''
     artist: str = ''

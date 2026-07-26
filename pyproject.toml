@@ -17,7 +17,10 @@ dependencies = [
 sonos-moments = "sonos_moments.app:main_without_reload"
 
 [dependency-groups]
-dev = ["ruff>=0.16.0"]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.16.0",
+]
 
 [build-system]
 requires = ["uv_build>=0.9.0"]

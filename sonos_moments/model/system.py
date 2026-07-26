@@ -10,6 +10,7 @@ from nicegui import app
 
 from .events import Subscriptions
 from .moment import Moment
+from .plan import Plan, plan
 from .registry import Registry
 from .source import Favorite, Source
 from .state import GroupState, SystemState
@@ -205,6 +206,8 @@ class System:
             return  # events from a speaker that is no longer a coordinator
         if 'transport_state' in variables:
             group.transport_state = variables['transport_state'] or 'STOPPED'
+        if 'av_transport_uri' in variables:
+            group.uri = variables['av_transport_uri'] or ''
         if 'av_transport_uri_meta_data' in variables:
             group.channel = _text(variables['av_transport_uri_meta_data'], 'title')
         if 'current_track_meta_data' in variables:
@@ -226,7 +229,7 @@ class System:
         for group, playback in zip(groups, playbacks, strict=True):
             if playback is None:
                 continue
-            group.transport_state, group.channel, group.title, group.artist = playback
+            group.transport_state, group.uri, group.channel, group.title, group.artist = playback
         if changed:
             self._notify()
 
@@ -262,12 +265,13 @@ class System:
     def _read_player(device: soco.SoCo) -> tuple[str, int, bool]:
         return device.uid, device.volume, device.mute
 
-    def _read_playback(self, coordinator_uid: str) -> tuple[str, str, str, str]:
+    def _read_playback(self, coordinator_uid: str) -> tuple[str, str, str, str, str]:
         device = self.devices[coordinator_uid]
         transport = device.get_current_transport_info().get('current_transport_state', 'STOPPED')
         media = device.get_current_media_info()
         track = device.get_current_track_info()
-        return transport, media.get('channel', ''), track.get('title', ''), track.get('artist', '')
+        return (transport, media.get('uri', ''), media.get('channel', ''),
+                track.get('title', ''), track.get('artist', ''))
 
     async def set_volume(self, uid: str, volume: int) -> None:
         player = self.state.player(uid)
@@ -341,41 +345,46 @@ class System:
             self.state.player(uid).online = False
             return False
 
-    async def play_moment(self, moment: Moment) -> None:
-        """Restore a moment: first the grouping, then the volumes, then the playback.
+    async def play_moment(self, moment: Moment) -> Plan:
+        """Bring the speakers to the state of a moment, changing only what differs.
+
+        Returns what was done, so the UI can say that there was nothing to do.
+        """
+        await self.refresh()  # the comparison is only worth as much as the picture it is based on
+        steps = plan(moment, self.state, self.favorites)
+        refused = await self._apply(steps)
+        if steps.unresolved or refused:
+            self.unresolved.add(moment.uid)
+        else:
+            self.unresolved.discard(moment.uid)
+        return steps
+
+    async def _apply(self, steps: Plan) -> bool:
+        """Carry out a plan, grouping first, then levels, then playback.
 
         The order matters: members have to be in place before the coordinator starts playing,
         otherwise they miss the beginning.
         """
-        await asyncio.gather(*(self.unjoin(group.coordinator_uid) for group in moment.groups))
-        await asyncio.gather(*(self.join(member_uid, group.coordinator_uid)
-                               for group in moment.groups
-                               for member_uid in group.members
-                               if member_uid != group.coordinator_uid))
-        await asyncio.gather(*(command
-                               for group in moment.groups
-                               for member_uid, member in group.members.items()
-                               for command in (self.set_volume(member_uid, member.volume),
-                                               self.set_mute(member_uid, member.mute))))
-        self.unresolved.discard(moment.uid)
-        for group in moment.groups:
-            resolved = group.source.resolve(self.favorites)
-            if group.source.kind == 'none':
-                pass
-            elif resolved is None:
-                self.unresolved.add(moment.uid)  # the favorite has disappeared
-            else:
-                uri, meta = resolved
-                if not await self._write(lambda device, uri=uri, meta=meta: Source.select(device, uri, meta),
-                                         group.coordinator_uid):
-                    self.unresolved.add(moment.uid)  # the speaker refused the source, e.g. a dead service
-            if group.state == 'PLAYING':
-                await self.play(group.coordinator_uid)
-            elif group.state == 'PAUSED_PLAYBACK':
-                await self.pause(group.coordinator_uid)
-            elif group.state == 'STOPPED':
-                await self.stop(group.coordinator_uid)
+        if steps.is_empty:
+            return False
+        await asyncio.gather(*(self.unjoin(uid) for uid in steps.unjoin))
+        await asyncio.gather(*(self.join(uid, coordinator_uid) for uid, coordinator_uid in steps.join))
+        await asyncio.gather(*(self.set_volume(uid, volume) for uid, volume in steps.volume.items()),
+                             *(self.set_mute(uid, mute) for uid, mute in steps.mute.items()))
+        refused = False
+        for coordinator_uid, (uri, meta) in steps.sources.items():
+            if not await self._write(lambda device, uri=uri, meta=meta: Source.select(device, uri, meta),
+                                     coordinator_uid):
+                refused = True  # e.g. a music service that is no longer linked to the household
+        for coordinator_uid, transport_state in steps.transport.items():
+            if transport_state == 'PLAYING':
+                await self.play(coordinator_uid)
+            elif transport_state == 'PAUSED_PLAYBACK':
+                await self.pause(coordinator_uid)
+            elif transport_state == 'STOPPED':
+                await self.stop(coordinator_uid)
         await self.refresh()
+        return refused
 
     async def play_favorite(self, favorite: Favorite, coordinator_uid: str) -> bool:
         """Start a favorite on a group, so that a source can be chosen without the Sonos app."""

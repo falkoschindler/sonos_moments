@@ -8,7 +8,9 @@ from ..model import Moment, System
 @ui.refreshable
 def moments_ui(system: System) -> None:
     async def play(moment: Moment) -> None:
-        await system.play_moment(moment)
+        steps = await system.play_moment(moment)
+        if steps.is_empty:
+            ui.notify(f'"{moment.name}" is already playing like this', type='info')
         moments_ui.refresh()  # a source may have turned out to be unresolvable
 
     async def recapture(moment: Moment) -> None:
