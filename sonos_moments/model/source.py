@@ -1,10 +1,11 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal, Self
 from urllib.parse import unquote
 
 import soco
 
 CONTAINER_PREFIXES = ('x-rincon-cpcontainer:', 'x-rincon-playlist:')
+QUEUE_PREFIX = 'x-rincon-queue:'  # a speaker playing its own queue, which says nothing about the contents
 
 
 def match_key(uri: str) -> str:
@@ -43,6 +44,13 @@ class Favorite:
 
 
 @dataclass(kw_only=True, slots=True)
+class Track:
+    """One entry of a queue: URI and metadata are all a speaker needs to take it back."""
+    uri: str
+    meta: str
+
+
+@dataclass(kw_only=True, slots=True)
 class Source:
     """A reference to something playable, resolved only when it is actually played.
 
@@ -51,11 +59,14 @@ class Source:
     URIs carry an account serial number that changes when a service is re-linked or migrated.
     A favorite, on the other hand, is kept working by Sonos itself.
     """
-    kind: Literal['favorite', 'uri', 'none']
+    kind: Literal['favorite', 'uri', 'queue', 'none']
     title: str = ''
     item_id: str = ''
     uri: str = ''
     meta: str = ''
+    tracks: list[Track] = field(default_factory=list)
+    track_number: int = 1  # which entry of the queue was playing, counted from 1
+    track_position: str = ''  # how far into that entry, as 'H:MM:SS'
 
     @classmethod
     def capture(cls, uri: str, meta: str, title: str, favorites: list[Favorite]) -> Self:
@@ -68,37 +79,82 @@ class Source:
             return cls(kind='favorite', title=favorite.title, item_id=favorite.item_id, uri=uri, meta=meta)
         return cls(kind='uri', title=title, uri=uri, meta=meta)
 
-    def resolve(self, favorites: list[Favorite]) -> tuple[str, str] | None:
-        """Return URI and metadata to play, or None if the source is gone."""
-        if self.kind == 'none':
-            return None
+    @classmethod
+    def capture_queue(cls, tracks: list[Track], title: str, track_number: int, track_position: str) -> Self:
+        """Describe a queue by its contents.
+
+        A speaker playing from its queue reports ``x-rincon-queue:<uid>#0`` as its transport URI,
+        which is a pointer to itself: restoring it would play whatever happens to be in the queue
+        at that later point in time, not the album or playlist that was playing when we looked.
+        """
+        if not tracks:
+            return cls(kind='none')
+        return cls(kind='queue', title=title, tracks=tracks,
+                   track_number=track_number, track_position=track_position)
+
+    def resolve(self, favorites: list[Favorite]) -> Self | None:
+        """Return the source to play, or None if it cannot be found any more.
+
+        A favorite is looked up freshly every time, because surviving a re-linked music service is
+        the entire reason for storing one.
+        """
         if self.kind == 'favorite':
             favorite = next((favorite for favorite in favorites if favorite.item_id == self.item_id), None) \
                 or next((favorite for favorite in favorites if favorite.title == self.title), None)
-            return (favorite.uri, favorite.meta) if favorite is not None else None
-        return (self.uri, self.meta) if self.uri else None
+            if favorite is None:
+                return None
+            return type(self)(kind='uri', title=favorite.title, item_id=favorite.item_id,
+                              uri=favorite.uri, meta=favorite.meta)
+        if self.kind == 'uri':
+            return self if self.uri else None
+        if self.kind == 'queue':
+            return self if self.tracks else None
+        return None
 
     @property
     def description(self) -> str:
         return self.title or self.uri
 
-    @staticmethod
-    def select(device: soco.SoCo, uri: str, meta: str) -> None:
-        """Make a resolved source the current one, without starting playback yet.
+    def apply(self, device: soco.SoCo) -> None:
+        """Make this source the current one, without starting playback.
 
-        Blocking; call from a thread. Containers such as playlists have to go through the queue,
-        streams can be handed to the transport directly. Playing is left to the caller because a
-        speaker needs a moment before it accepts a play command for a fresh stream.
+        Blocking; call from a thread. Playing is left to the caller because a speaker needs a
+        moment before it accepts a play command for a source it has just been handed.
         """
-        if uri.startswith(CONTAINER_PREFIXES):
+        if self.kind == 'queue':
+            self._fill_queue(device)
+        elif self.uri.startswith(CONTAINER_PREFIXES):
+            # containers such as playlists have to go through the queue, streams can be handed
+            # to the transport directly
             device.avTransport.RemoveAllTracksFromQueue([('InstanceID', 0)])
             device.avTransport.AddURIToQueue([('InstanceID', 0),
-                                              ('EnqueuedURI', uri),
-                                              ('EnqueuedURIMetaData', meta),
+                                              ('EnqueuedURI', self.uri),
+                                              ('EnqueuedURIMetaData', self.meta),
                                               ('DesiredFirstTrackNumberEnqueued', 0),
                                               ('EnqueueAsNext', 0)])
-            device.play_from_queue(0)
+            device.play_from_queue(0, start=False)
         else:
             device.avTransport.SetAVTransportURI([('InstanceID', 0),
-                                                  ('CurrentURI', uri),
-                                                  ('CurrentURIMetaData', meta)])
+                                                  ('CurrentURI', self.uri),
+                                                  ('CurrentURIMetaData', self.meta)])
+
+    def _fill_queue(self, device: soco.SoCo) -> None:
+        """Put the stored tracks back into the queue and pick up where the capture left off.
+
+        One request per track, like ``SoCo.add_to_queue``, but with the metadata we captured, so
+        titles and artwork survive. Batching exists as ``AddMultipleURIsToQueue``, which joins the
+        metadata of several tracks with spaces -- not something to rely on untested.
+        """
+        device.avTransport.RemoveAllTracksFromQueue([('InstanceID', 0)])
+        for track in self.tracks:
+            device.avTransport.AddURIToQueue([('InstanceID', 0),
+                                              ('EnqueuedURI', track.uri),
+                                              ('EnqueuedURIMetaData', track.meta),
+                                              ('DesiredFirstTrackNumberEnqueued', 0),
+                                              ('EnqueueAsNext', 0)])
+        device.play_from_queue(max(0, self.track_number - 1), start=False)
+        if self.track_position:
+            try:
+                device.seek(self.track_position)
+            except soco.exceptions.SoCoUPnPException:
+                pass  # not every source can be seeked, and the track itself matters more

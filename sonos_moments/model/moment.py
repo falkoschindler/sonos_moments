@@ -4,11 +4,14 @@ from uuid import uuid4
 
 import soco
 from dataclasses_json.core import _asdict, _decode_dataclass
+from soco.data_structures import to_didl_string
 from soco.data_structures_entry import from_didl_string
 
 from .device import Device
 from .group import Group
-from .source import Favorite, Source
+from .source import QUEUE_PREFIX, Favorite, Source, Track
+
+QUEUE_LIMIT = 200  # how many tracks of a queue a moment keeps, so storage stays sane
 
 
 def _title_of(meta: str) -> str:
@@ -19,6 +22,18 @@ def _title_of(meta: str) -> str:
         return from_didl_string(meta)[0].title
     except Exception:
         return ''
+
+
+def _capture_queue(coordinator: soco.SoCo) -> Source:
+    """Describe what is in the queue of a speaker. Blocking; call from a thread."""
+    info = coordinator.get_current_track_info()
+    tracks = [Track(uri=item.resources[0].uri, meta=to_didl_string(item))
+              for item in coordinator.get_queue(max_items=QUEUE_LIMIT) if item.resources]
+    number = info.get('playlist_position', '')
+    return Source.capture_queue(tracks=tracks,
+                                title=info.get('album') or info.get('title', ''),
+                                track_number=int(number) if number.isdigit() else 1,
+                                track_position=info.get('position', ''))
 
 
 @dataclass(kw_only=True, slots=True)
@@ -42,6 +57,10 @@ class Moment:
             media = coordinator.avTransport.GetMediaInfo([('InstanceID', 0)])
             uri = media.get('CurrentURI', '')
             meta = media.get('CurrentURIMetaData', '')
+            # the media info holds the source that was started, the track info only the resolved
+            # stream of this moment, which stops working after a while
+            source = _capture_queue(coordinator) if uri.startswith(QUEUE_PREFIX) else \
+                Source.capture(uri=uri, meta=meta, title=_title_of(meta), favorites=favorites)
             moment.groups.append(Group(
                 coordinator_uid=coordinator.uid,
                 members={
@@ -53,9 +72,7 @@ class Moment:
                     for member in group.members
                 },
                 state=coordinator.get_current_transport_info().get('current_transport_state'),
-                # the media info holds the source that was started, the track info only the
-                # resolved stream of this moment, which stops working after a while
-                source=Source.capture(uri=uri, meta=meta, title=_title_of(meta), favorites=favorites),
+                source=source,
             ))
         return moment
 

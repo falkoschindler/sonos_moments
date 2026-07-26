@@ -372,9 +372,8 @@ class System:
         await asyncio.gather(*(self.set_volume(uid, volume) for uid, volume in steps.volume.items()),
                              *(self.set_mute(uid, mute) for uid, mute in steps.mute.items()))
         refused = False
-        for coordinator_uid, (uri, meta) in steps.sources.items():
-            if not await self._write(lambda device, uri=uri, meta=meta: Source.select(device, uri, meta),
-                                     coordinator_uid):
+        for coordinator_uid, source in steps.sources.items():
+            if not await self._write(source.apply, coordinator_uid):
                 refused = True  # e.g. a music service that is no longer linked to the household
         for coordinator_uid, transport_state in steps.transport.items():
             if transport_state == 'PLAYING':
@@ -388,7 +387,8 @@ class System:
 
     async def play_favorite(self, favorite: Favorite, coordinator_uid: str) -> bool:
         """Start a favorite on a group, so that a source can be chosen without the Sonos app."""
-        if not await self._write(lambda device: Source.select(device, favorite.uri, favorite.meta), coordinator_uid):
+        source = Source(kind='uri', title=favorite.title, uri=favorite.uri, meta=favorite.meta)
+        if not await self._write(source.apply, coordinator_uid):
             return False
         await self.play(coordinator_uid)
         return True

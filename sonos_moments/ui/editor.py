@@ -85,12 +85,14 @@ def _source_select(form: _Form, group: Group) -> None:
     """Offer the favorites, plus whatever the moment already points at."""
     favorites = form.system.favorites
     options = {NO_SOURCE: 'Nothing (only grouping and volume)'}
-    if group.source.kind == 'uri':
-        # a raw stream URI is not in the favorites and can only be kept
+    if group.source.kind == 'favorite':
+        value = group.source.item_id
+    elif group.source.kind == 'none':
+        value = NO_SOURCE
+    else:
+        # a captured queue or a raw stream URI is not in the favorites and can only be kept
         options[KEEP_SOURCE] = group.source.description or 'The captured source'
         value = KEEP_SOURCE
-    else:
-        value = group.source.item_id if group.source.kind == 'favorite' else NO_SOURCE
     options.update({favorite.item_id: favorite.title for favorite in favorites})
     if value not in options:
         options[value] = f'{group.source.title} (no longer available)'

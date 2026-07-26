@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 
 from .group import Group
 from .moment import Moment
-from .source import Favorite, match_key
+from .source import Favorite, Source, match_key
 from .state import GroupState, SystemState
 
 
@@ -17,7 +17,7 @@ class Plan:
     join: list[tuple[str, str]] = field(default_factory=list)
     volume: dict[str, int] = field(default_factory=dict)
     mute: dict[str, bool] = field(default_factory=dict)
-    sources: dict[str, tuple[str, str]] = field(default_factory=dict)
+    sources: dict[str, Source] = field(default_factory=dict)
     transport: dict[str, str] = field(default_factory=dict)
     unresolved: list[str] = field(default_factory=list)
 
@@ -77,16 +77,19 @@ def _plan_playback(result: Plan, group: Group, coordinator_uid: str,
         resolved = group.source.resolve(favorites)
         if resolved is None:
             result.unresolved.append(coordinator_uid)
-        elif current is None or not _is_same_source(current.uri, resolved[0]):
+        elif current is None or not _is_same_source(current.uri, resolved):
             result.sources[coordinator_uid] = resolved
     if coordinator_uid in result.sources or current is None or current.transport_state != group.state:
         result.transport[coordinator_uid] = group.state
 
 
-def _is_same_source(current_uri: str, wanted_uri: str) -> bool:
+def _is_same_source(current_uri: str, wanted: Source) -> bool:
     """Only skip setting the source when the two are provably the same.
 
     A stream that has already been resolved to a CDN address never matches the favorite it came
-    from. Setting it again is cheap, guessing wrong is not.
+    from, and a queue reports itself as ``x-rincon-queue:<uid>``, which says nothing about its
+    contents. Setting the source again is cheap, guessing wrong is not.
     """
-    return bool(current_uri) and match_key(current_uri) == match_key(wanted_uri)
+    if wanted.kind != 'uri':
+        return False
+    return bool(current_uri) and match_key(current_uri) == match_key(wanted.uri)

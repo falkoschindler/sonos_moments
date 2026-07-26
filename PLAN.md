@@ -4,9 +4,11 @@ Ziel: Live-Updates statt Polling, spürbar schnellere UI, robuster Dauerbetrieb 
 
 ## Stand
 
-Auf Branch `rebuild-event-driven` umgesetzt und gegen das laufende System verifiziert: Etappe 1 (Registry und State-Layer), Etappe 2 (Event-Subscriptions), Etappe 3 (Schreibpfad) und vom Etappe-4-Paket das Datenmodell (Quellen-Referenzen), das Favoriten-Menü, der Abgleich beim Abspielen, der UI-Neubau und der Moment-Editor. Dazu kam unabhängig davon der Umstieg von Poetry auf uv samt Modernisierung der pre-commit-Hooks und ein Packaging-Fix, durch den `icon.png` überhaupt erst im Wheel landet.
+Auf Branch `rebuild-event-driven` umgesetzt: Etappe 1 (Registry und State-Layer), Etappe 2 (Event-Subscriptions), Etappe 3 (Schreibpfad) und Etappe 4 (Quellen-Referenzen, Favoriten-Menü, Abgleich beim Abspielen, UI-Neubau, Moment-Editor, queue-erhaltendes Capture). Dazu kam unabhängig davon der Umstieg von Poetry auf uv samt Modernisierung der pre-commit-Hooks und ein Packaging-Fix, durch den `icon.png` überhaupt erst im Wheel landet.
 
-**Als Nächstes** steht der Rest von Etappe 4 an: das queue-erhaltende Capture. Danach TuneIn-Suche, dann Watchdog und Deployment.
+Gegen das laufende System verifiziert ist alles davon außer dem Wiederherstellen einer Queue: Dafür müsste etwas in einer Queue liegen, und es gibt derzeit weder eine lokale Bibliothek (`list_library_shares()` ist leer) noch einen verknüpften Dienst, aus dem sich etwas einreihen ließe. Der Pfad ist nur durch Tests des Speicherformats abgedeckt.
+
+**Als Nächstes** steht Etappe 5 an, die TuneIn-Suche. Danach Watchdog und Deployment.
 
 **Offene Kleinigkeiten**, die noch niemand entschieden hat:
 
@@ -107,9 +109,11 @@ Konsequenz: Ein Moment speichert pro Gruppe nicht die Transport-URI, sondern ein
 | Typ | Inhalt | Robustheit |
 |---|---|---|
 | `favorite` | Titel + Item-ID des Sonos-Favoriten | am höchsten — Sonos pflegt die Favoriten selbst über Account-Wechsel hinweg |
-| `service_item` | Service-ID, Item-ID, Servicename | hoch, solange der Dienst verknüpft bleibt |
-| `queue` | Queue-Inhalt bzw. Container-URI, Tracknummer, Position | für Playlists und Alben |
+| `uri` | Transport-URI samt Metadaten | der Notnagel für alles, was kein Favorit ist |
+| `queue` | Queue-Inhalt als URI + DIDL pro Track, Tracknummer, Position | für Playlists und Alben |
 | `none` | nichts | Moment setzt nur Gruppierung und Lautstärken |
+
+Beim `queue`-Typ ist der Inhalt selbst gespeichert und nicht der Container, aus dem er stammt: Ein Speaker, der aus seiner Queue spielt, meldet als Transport-URI `x-rincon-queue:<uid>#0` — einen Zeiger auf sich selbst, dem nicht anzusehen ist, welches Album oder welche Playlist ihn gefüllt hat. Wiederhergestellt wird wie in `soco.snapshot.Snapshot`, nur mit den mitgeschnittenen Metadaten, damit Titel und Cover erhalten bleiben. Die Grenze liegt bei 200 Tracks (`moment.QUEUE_LIMIT`), und das Wiederherstellen leert die Queue des Speakers — anders geht es nicht.
 
 Aufgelöst wird erst beim Abspielen. Lässt sich eine Quelle nicht mehr auflösen, wird der Moment in der UI als reparaturbedürftig markiert und man kann die Quelle neu auswählen, statt dass stumm nichts passiert.
 
@@ -204,7 +208,7 @@ Der UI-Neubau gehört zeitlich zu Etappe 4: Erst dann steht das Datenmodell, das
 1. ~~**State-Layer und Registry.**~~ *(erledigt)* Geräte-Registry über UIDs mit IP-Cache und Hintergrund-Suche, prozessweiter State, UI rendert ohne Netzwerk-Calls, alle SoCo-Aufrufe in `to_thread`.
 2. ~~**Event-Subscriptions.**~~ *(erledigt)* Abos für RenderingControl, AVTransport und ZoneGroupTopology, Queue-Drain per Timer, Umhängen bei Topologie-Änderungen, Bindings statt Full-Refresh.
 3. ~~**Schreibpfad.**~~ *(erledigt)* Echo-Suppression, Drosselung, `sleep(1.0)`-Hack entfernt.
-4. **Moments und Quellen.** Quellen-Referenz statt Transport-URI, Favoriten-Menü, korrekte Restore-Reihenfolge, Abgleich statt stumpfem Wiederherstellen, UI-Neubau und Moment-Editor sind erledigt. Offen: queue-erhaltendes Capture für Playlists.
+4. ~~**Moments und Quellen.**~~ *(erledigt)* Quellen-Referenz statt Transport-URI, Favoriten-Menü, korrekte Restore-Reihenfolge, Abgleich statt stumpfem Wiederherstellen, UI-Neubau, Moment-Editor und queue-erhaltendes Capture.
 5. **TuneIn-Suche.** Stöbern und Suchen nach Radiosendern direkt in der App.
 6. **Watchdog und Deployment.** Stale-Kennzeichnung, systemd-Unit, Powersave, PWA-Manifest. Die Resubscribe-Logik steckt bereits im Sync der Subscriptions.
 7. **Optional: SoundCloud und Mixcloud.** Auth-Flow mit Token-Store.

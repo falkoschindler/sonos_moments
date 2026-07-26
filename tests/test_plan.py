@@ -1,6 +1,6 @@
 import pytest
 
-from sonos_moments.model import Device, Favorite, Group, GroupState, Moment, Source, SystemState, plan
+from sonos_moments.model import Device, Favorite, Group, GroupState, Moment, Source, SystemState, Track, plan
 
 RADIOEINS = 'x-sonosapi-stream:tunein%3a9575?sid=303&flags=8224&sn=5'
 RADIOEINS_PLAYING = 'x-sonosapi-stream:tunein%3A9575?sid=303&flags=8232&sn=5'  # other flags, other escaping
@@ -89,13 +89,13 @@ def test_running_stream_counts_as_the_favorite_it_came_from():
 def test_another_station_is_set_and_started():
     source = Source(kind='favorite', title='WDR 5', item_id='FV:2/70', uri=WDR5)
     result = plan(moment_with({'a': ['a']}, source=source), state_with({'a': ['a']}), FAVORITES)
-    assert result.sources == {'a': (WDR5, '<wdr5/>')}
+    assert result.sources['a'] == Source(kind='uri', title='WDR 5', item_id='FV:2/70', uri=WDR5, meta='<wdr5/>')
     assert result.transport == {'a': 'PLAYING'}  # a freshly assigned source does not start by itself
 
 
 def test_rebuilt_group_always_gets_its_source_again():
     result = plan(moment_with({'a': ['a', 'b']}), state_with({'a': ['a'], 'b': ['b']}), FAVORITES)
-    assert result.sources == {'a': (RADIOEINS, '<radioeins/>')}
+    assert result.sources['a'].uri == RADIOEINS
     assert result.transport == {'a': 'PLAYING'}
 
 
@@ -110,6 +110,22 @@ def test_a_moment_leaves_speakers_it_does_not_name_alone():
     state = state_with({'a': ['a'], 'c': ['c', 'd']})
     result = plan(moment_with({'a': ['a']}), state, FAVORITES)
     assert result.is_empty
+
+
+def test_a_queue_is_always_filled_again():
+    """A speaker playing from its queue reports the queue itself, which proves nothing about it."""
+    source = Source(kind='queue', title='An album', tracks=[Track(uri='x-sonos-http:1.mp3', meta='<one/>')])
+    result = plan(moment_with({'a': ['a']}, source=source),
+                  state_with({'a': ['a']}, uri='x-rincon-queue:RINCON_a#0'), FAVORITES)
+    assert result.sources['a'] is source
+    assert result.transport == {'a': 'PLAYING'}
+
+
+def test_an_empty_queue_is_reported():
+    source = Source(kind='queue', title='An album')
+    result = plan(moment_with({'a': ['a']}, source=source), state_with({'a': ['a']}), FAVORITES)
+    assert result.unresolved == ['a']
+    assert not result.sources
 
 
 @pytest.mark.parametrize('kind', ['none', 'uri'])
