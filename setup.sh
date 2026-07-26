@@ -18,6 +18,11 @@ HOST="${TARGET#*@}"
 REMOTE_DIR="sonos_moments"
 SERVICE="sonos_moments"
 
+# -4 because the .local name may also resolve to an unreachable IPv6 address.
+# accept-new because we drop the host keys just below and would otherwise be
+# asked to confirm the new one, which fails whenever this runs unattended.
+SSH="ssh -4 -o StrictHostKeyChecking=accept-new"
+
 echo "==> Dropping stale host keys"
 # A freshly flashed card generates new host keys, so the remembered ones no
 # longer match. Cover both the plain name and the .local form.
@@ -26,25 +31,41 @@ for name in "$HOST" "${HOST%.local}" "${HOST%.local}.local"; do
 done
 
 echo "==> Installing uv"
-ssh -4 "$TARGET" 'command -v ~/.local/bin/uv >/dev/null || curl -LsSf https://astral.sh/uv/install.sh | sh'
+$SSH "$TARGET" 'command -v ~/.local/bin/uv >/dev/null || curl -LsSf https://astral.sh/uv/install.sh | sh'
 
 echo "==> Creating ${REMOTE_DIR} and moving NiceGUI storage to the boot partition"
 # The boot partition is FAT32 and stays writable under the overlay, so the
 # moments survive a reboot while the root filesystem never gets written to.
-ssh -4 "$TARGET" "
-    set -e
-    mkdir -p ~/${REMOTE_DIR}
-    BOOT=/boot/firmware
-    [ -d \$BOOT ] || BOOT=/boot
-    sudo mkdir -p \$BOOT/nicegui
-    sudo chown ${USER_NAME}:${USER_NAME} \$BOOT/nicegui
-    rm -rf ~/${REMOTE_DIR}/.nicegui
-    ln -s \$BOOT/nicegui ~/${REMOTE_DIR}/.nicegui
-    echo \"    .nicegui -> \$BOOT/nicegui\"
-"
+$SSH "$TARGET" "bash -s ${REMOTE_DIR}" <<'REMOTE'
+set -e
+REMOTE_DIR=$1
+BOOT=/boot/firmware
+[ -d "$BOOT" ] || BOOT=/boot
+
+# FAT32 carries no ownership of its own - the mount options decide who may
+# write, and chown on it simply fails. Without this the service cannot save a
+# moment. Only the options field of that one fstab line is touched.
+if ! findmnt -n -o OPTIONS "$BOOT" | grep -q "uid=$(id -u)"; then
+    echo "    handing $BOOT to $(id -un) in /etc/fstab"
+    awk -v mnt="$BOOT" -v opts="uid=$(id -u),gid=$(id -g)" -v OFS='\t' \
+        '$2 == mnt && $3 == "vfat" { $4 = $4 "," opts } { print }' \
+        /etc/fstab > /tmp/fstab.new
+    sudo cp /tmp/fstab.new /etc/fstab
+    rm -f /tmp/fstab.new
+    # vfat fixes uid and gid at mount time and ignores them on a remount, so
+    # the partition has to go all the way down and up again.
+    sudo umount "$BOOT" && sudo mount "$BOOT"
+fi
+
+mkdir -p ~/"$REMOTE_DIR"
+mkdir -p "$BOOT/nicegui"
+rm -rf ~/"$REMOTE_DIR"/.nicegui
+ln -s "$BOOT/nicegui" ~/"$REMOTE_DIR"/.nicegui
+echo "    .nicegui -> $BOOT/nicegui"
+REMOTE
 
 echo "==> Installing the systemd unit"
-ssh -4 "$TARGET" "sudo tee /etc/systemd/system/${SERVICE}.service > /dev/null <<EOF
+$SSH "$TARGET" "sudo tee /etc/systemd/system/${SERVICE}.service > /dev/null <<EOF
 [Unit]
 Description=Sonos Moments
 After=network-online.target
@@ -69,7 +90,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable ${SERVICE} >/dev/null 2>&1"
 
 echo "==> Reducing writes to the card"
-ssh -4 "$TARGET" '
+$SSH "$TARGET" '
     sudo systemctl disable --now apt-daily.timer apt-daily-upgrade.timer >/dev/null 2>&1 || true
     sudo mkdir -p /etc/systemd/journald.conf.d
     echo -e "[Journal]\nStorage=volatile\nRuntimeMaxUse=16M" | sudo tee /etc/systemd/journald.conf.d/volatile.conf > /dev/null

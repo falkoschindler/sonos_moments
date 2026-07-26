@@ -10,12 +10,12 @@ For the TuneIn search, browsing, searching, playing a station that was found, an
 
 Everything else is verified against the running system except restoring a queue: that would require something to be in a queue, and there is currently neither a local library (`list_library_shares()` is empty) nor a linked service from which something could be enqueued. That path is covered only by tests of the storage format.
 
-**Next up**: of stage 6 the stale marking is done; the rest concerns the Pi (wifi power save, undervoltage, SD card) and is deferred as long as there are problems with the device. With that the rebuild is substantively complete, and it continues with feature requests — the roadmap in the README lists group volume, alarms, timers and media links.
+**Next up**: the rebuild is substantively complete, including stage 6 — the board has been set up from scratch and runs with the read-only overlay. It continues with feature requests; the roadmap in the README lists group volume, alarms, timers and media links.
 
 **Open details** nobody has decided yet:
 
 - When a moment is pressed and there is nothing to do, nothing happens, and the app says so. The alternative would be forcing the stream to restart — one line, but a matter of taste.
-- The Raspberry Pi Zero 2 W has not been looked at yet. The suspicions are in the deployment section.
+- The moments the old card held are gone with it; they have to be recorded again.
 - The favorites with `sid=333` would have to be recreated in the Sonos app, see below. Only whoever owns the Sonos household can do that.
 
 Two findings from the implementation that were not on the radar beforehand:
@@ -228,7 +228,7 @@ The UI rebuild belongs to stage 4 in time: only then is the data model in place 
 3. ~~**Write path.**~~ *(done)* Echo suppression, throttling, `sleep(1.0)` hack removed.
 4. ~~**Moments and sources.**~~ *(done)* Source reference instead of transport URI, favorites menu, correct restore order, reconciliation instead of blunt restoring, UI rebuild, moment editor and queue-preserving capture.
 5. ~~**TuneIn search.**~~ *(done)* Browsing and searching for radio stations directly in the app, as a source in the moment editor and for playing immediately from the room card.
-6. **Watchdog and deployment.** Stale marking, resubscribe logic and the PWA manifest are done. What remains open concerns the Pi itself: wifi power save, undervoltage, SD card. That is deferred as long as there are problems with the device.
+6. ~~**Watchdog and deployment.**~~ *(done)* Stale marking, resubscribe logic, PWA manifest, and the board itself: freshly set up with `flash.sh`, `setup.sh` and `deploy.sh`, with the read-only overlay on, so the plug can be pulled. Wifi power save stays on deliberately — the board is idle most of the time and the energy matters more here than the occasional latency spike. Undervoltage has not been measured.
 7. **Optional: SoundCloud and Mixcloud.** Auth flow with a token store.
 
 Stages 1 to 3 belong together and add up to the actual rebuild; after that, stage 4 is the part with the greatest everyday benefit.

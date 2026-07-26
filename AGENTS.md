@@ -42,6 +42,9 @@ For anyone working on that machine: 417 MB of RAM, and under load it becomes unr
 - After setting a new stream source, the speaker needs about a second before it accepts `play()`, otherwise `UPnP Error 701`.
 - Two controllers at once are a problem locally as well: if the app is running while a script writes to the same speakers directly, `UPnP Error 402` and read timeouts come back that look like a bug in your own code. Stop the local instance before running such scripts.
 - A refresh spans several `await`s. Nothing that replaces `state.groups` may interfere in between — that is what the lock in `System.refresh` is for.
+- FAT32 carries no ownership of its own, so `chown` on the boot partition fails and the service cannot write its moments there. The mount options decide, and `vfat` fixes `uid`/`gid` at mount time: a `mount -o remount` silently keeps the old ones, it has to go all the way down and up. `setup.sh` does that.
+- Raspberry Pi OS Trixie is customised through cloud-init (`user-data` and `network-config`), not through the `custom.toml` of the Bookworm era. A `custom.toml` is simply left lying there, and the board comes up with no user, no wifi and no SSH. In the image, sshd is disabled and the radio is blocked until a wifi country is set.
+- `raspi-config` no longer switches the overlay through `boot=overlay`; it installs `overlayroot` and prepends `overlayroot=tmpfs` to the kernel command line. Checking for the old marker reports "off" on a system where it is on. What settles it is `findmnt /`, which says `overlay` once it has taken effect.
 
 ## Conventions
 

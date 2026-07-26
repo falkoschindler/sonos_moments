@@ -66,20 +66,33 @@ For permanent operation, Sonos Moments is best run as a systemd service on a sma
 
 ### Preparing the card
 
-Flash **Raspberry Pi OS Lite (64-bit)** with the Raspberry Pi Imager - the Lite image, because the machine runs headless and a Zero 2 W only has about 417 MB of usable RAM.
-Open the settings (the gear, or `Cmd+Shift+X`) and preconfigure hostname, user, your SSH public key, wifi SSID with country, and the timezone.
-Without that, a headless board never joins the network and the card has to come out again.
+The board runs **Raspberry Pi OS Lite (64-bit)** - the Lite image, because it runs headless and a Zero 2 W only has about 417 MB of usable RAM.
+On macOS, `flash.sh` writes it and preconfigures the first boot in one go:
+
+```bash
+./flash.sh [user@host]
+```
+
+It fetches the current image, verifies its checksum, refuses to write to anything that is not a removable SD card, asks twice before erasing, reads the card back to compare, and then writes the first-boot configuration: hostname and account from the target you passed, your SSH public key, and the wifi you are asked for.
+The account gets no password at all - SSH takes the key only, `sudo` needs none, and the console logs in by itself, so nothing has to be remembered two years from now.
+Whoever holds the board can read the unencrypted card anyway.
+
+The Raspberry Pi Imager does the same job, but **use version 2.x for Trixie images**.
+Trixie is customised through cloud-init (`user-data` and `network-config` on the boot partition), while Bookworm used a `custom.toml`.
+Imager 1.x does not know the newer format, assumes the older one, and writes a file the image never reads: the customisation appears to succeed and the board comes up with no user, no wifi and no SSH.
+Whichever way you go, preconfiguring is not optional - a headless board that was not told about the wifi never joins the network, and the card has to come out again.
 
 Note that a Zero 2 W speaks 2.4 GHz only, and its antenna is etched onto the board with no connector for an external one - a metal enclosure is enough to keep it off the network for good.
 
-The first boot resizes the filesystem and generates host keys, which takes its time on this hardware; give it 15 to 20 minutes before assuming something is wrong.
+The first boot resizes the filesystem, generates host keys and applies the customisation, which takes its time on this hardware; give it 15 to 20 minutes before assuming something is wrong.
+`cloud-init status --long` afterwards says whether it all went through.
 Then run the one-time setup from your machine:
 
 ```bash
 ./setup.sh [user@host]
 ```
 
-Both scripts take the target as an argument.
+All three scripts take the target as an argument.
 Without one they fall back to `$SONOS_MOMENTS_HOST`, so you can put your own host in your shell profile instead of passing it every time:
 
 ```bash
@@ -121,6 +134,9 @@ The fix is the overlay filesystem that Raspberry Pi OS ships with:
 ```bash
 sudo raspi-config nonint enable_overlayfs && sudo reboot
 ```
+
+Building the initramfs takes a minute or two on a Zero 2 W, so detach it if the connection is at all shaky.
+Afterwards `findmnt /` reports `overlay` as the filesystem, and that is the check that settles it - current versions prepend `overlayroot=tmpfs` to the kernel command line rather than the `boot=overlay` that older instructions look for.
 
 The root filesystem is then mounted read-only with a tmpfs layered on top, so the card is never written to again and the plug can be pulled at any time.
 This is not a read-only system in the painful sense - logs, `app.storage` and temporary files all keep working normally, they just do not survive a reboot.
