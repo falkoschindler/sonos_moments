@@ -1,7 +1,7 @@
 from .moments import moments_ui
-from .speakers import speakers_ui
+from .rooms import rooms_ui
 
 __all__ = [
     'moments_ui',
-    'speakers_ui',
+    'rooms_ui',
 ]

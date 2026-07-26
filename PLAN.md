@@ -4,9 +4,9 @@ Ziel: Live-Updates statt Polling, spürbar schnellere UI, robuster Dauerbetrieb 
 
 ## Stand
 
-Auf Branch `rebuild-event-driven` umgesetzt und gegen das laufende System verifiziert: Etappe 1 (Registry und State-Layer), Etappe 2 (Event-Subscriptions), Etappe 3 (Schreibpfad) und vom Etappe-4-Paket das Datenmodell (Quellen-Referenzen), das Favoriten-Menü und der Abgleich beim Abspielen. Dazu kam unabhängig davon der Umstieg von Poetry auf uv samt Modernisierung der pre-commit-Hooks und ein Packaging-Fix, durch den `icon.png` überhaupt erst im Wheel landet.
+Auf Branch `rebuild-event-driven` umgesetzt und gegen das laufende System verifiziert: Etappe 1 (Registry und State-Layer), Etappe 2 (Event-Subscriptions), Etappe 3 (Schreibpfad) und vom Etappe-4-Paket das Datenmodell (Quellen-Referenzen), das Favoriten-Menü, der Abgleich beim Abspielen und der UI-Neubau. Dazu kam unabhängig davon der Umstieg von Poetry auf uv samt Modernisierung der pre-commit-Hooks und ein Packaging-Fix, durch den `icon.png` überhaupt erst im Wheel landet.
 
-**Als Nächstes** steht der Rest von Etappe 4 an: der Moment-Editor und der UI-Neubau. Die dafür nötigen Entscheidungen sind getroffen und weiter unten festgehalten — ein Screen ohne Navigation, Moments als Aktionsleiste, dauerhaft sichtbarer Status pro Gruppe, keine getrennte Raum-Ansicht, keine Erkennung eines „aktiven" Moments. Danach TuneIn-Suche, dann Watchdog und Deployment.
+**Als Nächstes** steht der Rest von Etappe 4 an: der Moment-Editor und das queue-erhaltende Capture. Danach TuneIn-Suche, dann Watchdog und Deployment.
 
 **Offene Kleinigkeiten**, die noch niemand entschieden hat:
 
@@ -159,6 +159,8 @@ Vorgeschlagene Reihenfolge: Favoriten-Browser zuerst (billig, robust, deckt den 
 
 ## UI neu denken
 
+*(umgesetzt — `ui/rooms.py` und `ui/moments.py`; der Abschnitt bleibt als Begründung stehen)*
+
 Die bestehende UI hat drei Annahmen eingebaut, die der Umbau kippt, und das ist der eigentliche Grund, sie neu zu denken.
 
 **Erstens sind Moments heute ein Anhängsel.** Oben die Speaker-Tabs mit allen Reglern, unten eine schmale Zwei-Spalten-Liste mit den Moments. Ein Moment ist eine reine Aktion — antippen, fertig — und gehört damit prominent und gut mit dem Daumen erreichbar platziert, aber nicht flächig: Buttons, keine Kachelwand. Kein zweiter Bereich, keine Navigation. Alles liegt auf einem Screen.
@@ -170,6 +172,8 @@ Die bestehende UI hat drei Annahmen eingebaut, die der Umbau kippt, und das ist 
 Dazu ein Moment-Editor, der aus dem Quellen-Feature folgt: Räume auswählen, Lautstärken setzen, Quelle aus Favoriten oder Suche wählen, speichern. Damit ersetzt „Moment anlegen" den Umweg über die Sonos-App, und „Re-capture" wird vom Hauptweg zur Abkürzung.
 
 Kleinigkeiten fürs Handy: Der `ui.knob` ist am Desktop hübsch, mit dem Daumen aber fummelig — Slider mit großer Trefferfläche plus die vorhandenen +/−-Buttons sind dort die bessere Wahl. Und da die UI künftig live aktualisiert, muss das Rendern feingranular an den State gebunden sein, sonst schließen sich bei jedem eingehenden Event offene Menüs und Dialoge.
+
+**So gebaut:** Ein Screen ohne Navigation. Oben die Räume als Karte pro Gruppe — Gruppenname, Sender und Titel, Play/Pause und Stop, Favoriten- und Gruppen-Menü, darunter pro Speaker eine Zeile mit Mute, Slider und +/−. Unten in einem festen Footer die Moments als Aktionsleiste: Antippen spielt, das angehängte Menü zeigt die Quelle und bietet Umbenennen, Neu-Aufnehmen und Löschen; rechts der Capture-Button, der den neuen Moment gleich benennen lässt. Die Tabs sind weg, ebenso der Knob.
 
 **Entschieden:** Es gibt keine getrennte Raum-Ansicht. Der Screen zeigt dauerhaft, was gerade wo läuft — pro Gruppe eine Zeile mit Raumnamen, Sender oder Titel, Transport-Zustand und Lautstärke — und darüber oder darunter die Moments als Aktionsleiste. Die Statusanzeige ist damit auch die Rückmeldung: Nach dem Antippen eines Moments sieht man unmittelbar, dass sich Gruppierung, Quelle und Lautstärken geändert haben. Genau deshalb braucht es keine Hervorhebung eines „aktiven" Moments — und der Modellteil, der die aktuelle Situation mit gespeicherten Moments abgleichen müsste, entfällt ersatzlos.
 
@@ -200,7 +204,7 @@ Der UI-Neubau gehört zeitlich zu Etappe 4: Erst dann steht das Datenmodell, das
 1. ~~**State-Layer und Registry.**~~ *(erledigt)* Geräte-Registry über UIDs mit IP-Cache und Hintergrund-Suche, prozessweiter State, UI rendert ohne Netzwerk-Calls, alle SoCo-Aufrufe in `to_thread`.
 2. ~~**Event-Subscriptions.**~~ *(erledigt)* Abos für RenderingControl, AVTransport und ZoneGroupTopology, Queue-Drain per Timer, Umhängen bei Topologie-Änderungen, Bindings statt Full-Refresh.
 3. ~~**Schreibpfad.**~~ *(erledigt)* Echo-Suppression, Drosselung, `sleep(1.0)`-Hack entfernt.
-4. **Moments und Quellen.** Quellen-Referenz statt Transport-URI, Favoriten-Menü, korrekte Restore-Reihenfolge und der Abgleich statt stumpfem Wiederherstellen sind erledigt. Offen: der Moment-Editor, queue-erhaltendes Capture für Playlists und der UI-Neubau.
+4. **Moments und Quellen.** Quellen-Referenz statt Transport-URI, Favoriten-Menü, korrekte Restore-Reihenfolge, der Abgleich statt stumpfem Wiederherstellen und der UI-Neubau sind erledigt. Offen: der Moment-Editor und queue-erhaltendes Capture für Playlists.
 5. **TuneIn-Suche.** Stöbern und Suchen nach Radiosendern direkt in der App.
 6. **Watchdog und Deployment.** Stale-Kennzeichnung, systemd-Unit, Powersave, PWA-Manifest. Die Resubscribe-Logik steckt bereits im Sync der Subscriptions.
 7. **Optional: SoundCloud und Mixcloud.** Auth-Flow mit Token-Store.

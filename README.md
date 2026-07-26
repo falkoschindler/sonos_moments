@@ -58,12 +58,13 @@ Run `sonos-moments --help` to see all available options, e.g. to change the port
 
 The web interface is quite simple and self-explanatory:
 
-On the top panel there is a list of all available speakers.
-You can control the volume of each speaker individually, mute/unmute it, and play/pause the current track.
+Everything is on a single screen.
+The main area shows one card per group of speakers with what is playing there, buttons to play, pause and stop it, a menu to pick one of your Sonos favorites, and a menu to change which rooms belong to the group.
+Below that, each speaker has its own row to control volume and mute.
 
-You can capture the current state of the speakers by clicking the button on the top right.
-A new moment will be added to the list below, with buttons to play, re-capture and delete it.
-Feel free to rename the moment to something more meaningful.
+The bar at the bottom holds your moments.
+Tapping one restores it; the arrow next to it opens a menu to rename, re-capture or delete it.
+The button on the right captures the current state of the speakers as a new moment and asks for a name.
 
 ## Vision
 
