@@ -54,6 +54,58 @@ If you want to access it from another device, you need to replace `localhost` wi
 
 Run `sonos-moments --help` to see all available options, e.g. to change the port.
 
+## Deployment
+
+For permanent operation, Sonos Moments is best run as a systemd service on a small always-on machine like a Raspberry Pi Zero 2 W.
+
+Install [uv](https://docs.astral.sh/uv/) on the target, put the code into `~/sonos_moments`, and run `uv sync` there once.
+Then create `/etc/systemd/system/sonos_moments.service`:
+
+```ini
+[Unit]
+Description=Sonos Moments
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/<user>/sonos_moments
+User=<user>
+Group=<user>
+
+ExecStart=/home/<user>/sonos_moments/.venv/bin/sonos-moments --port 8081
+
+Restart=on-failure
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
+```
+
+`ExecStart` points at the virtualenv directly instead of going through `uv run`, which would try to reach the network on every start - an unnecessary source of failure while booting, when the network may not be up yet.
+
+Enable it with `sudo systemctl enable --now sonos_moments`.
+
+Subsequent deployments are handled by `deploy.sh`, which syncs the working tree with [livesync](https://github.com/zauberzeug/livesync), updates the dependencies and restarts the service:
+
+```bash
+./deploy.sh [user@host]
+```
+
+It waits for the service to answer on port 8081 and points at the journal if it does not.
+Note that `.syncignore` keeps `.venv/` out of the transfer - the target builds its own for its architecture.
+
+While developing, `livesync` can also keep watching and restart the service on every change:
+
+```bash
+livesync . <user>@<host>:sonos_moments --on-change "sudo systemctl restart sonos_moments"
+```
+
+Only one instance should talk to the speakers at a time.
+As soon as a `ZoneGroupTopology` subscription exists, SoCo stops polling the topology, so a second instance can leave the first one with a stale view.
+Stop the service before running a local copy against the same speakers.
+
 ## Usage
 
 The web interface is quite simple and self-explanatory:
