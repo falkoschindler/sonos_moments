@@ -4,7 +4,15 @@ Ziel: Live-Updates statt Polling, spürbar schnellere UI, robuster Dauerbetrieb 
 
 ## Stand
 
-Auf Branch `rebuild-event-driven` umgesetzt und gegen das laufende System verifiziert: Etappe 1 (Registry und State-Layer), Etappe 2 (Event-Subscriptions), Etappe 3 (Schreibpfad) und der Datenmodell-Teil von Etappe 4 (Quellen-Referenzen, Favoriten-Menü). Offen sind der UI-Neubau, die TuneIn-Suche, Watchdog und Deployment sowie optional SoundCloud und Mixcloud.
+Auf Branch `rebuild-event-driven` umgesetzt und gegen das laufende System verifiziert: Etappe 1 (Registry und State-Layer), Etappe 2 (Event-Subscriptions), Etappe 3 (Schreibpfad) und vom Etappe-4-Paket das Datenmodell (Quellen-Referenzen), das Favoriten-Menü und der Abgleich beim Abspielen. Dazu kam unabhängig davon der Umstieg von Poetry auf uv samt Modernisierung der pre-commit-Hooks und ein Packaging-Fix, durch den `icon.png` überhaupt erst im Wheel landet.
+
+**Als Nächstes** steht der Rest von Etappe 4 an: der Moment-Editor und der UI-Neubau. Die dafür nötigen Entscheidungen sind getroffen und weiter unten festgehalten — ein Screen ohne Navigation, Moments als Aktionsleiste, dauerhaft sichtbarer Status pro Gruppe, keine getrennte Raum-Ansicht, keine Erkennung eines „aktiven" Moments. Danach TuneIn-Suche, dann Watchdog und Deployment.
+
+**Offene Kleinigkeiten**, die noch niemand entschieden hat:
+
+- Wenn ein Moment gedrückt wird und nichts zu tun ist, passiert nichts, und die App sagt das. Alternative wäre ein erzwungener Neustart des Streams — eine Zeile, aber eine Geschmacksfrage.
+- Der Raspberry Pi Zero 2 W ist noch nicht angeschaut worden. Dafür fehlen Hostname oder IP; die Verdachtsmomente stehen im Deployment-Abschnitt.
+- Die Favoriten mit `sid=333` müssten in der Sonos-App neu angelegt werden, siehe unten. Das kann nur Falko machen.
 
 Zwei Erkenntnisse aus der Umsetzung, die vorher nicht auf dem Schirm waren:
 
@@ -172,7 +180,7 @@ Der Zero 2 W (4× Cortex-A53, 1 GHz, 512 MB) reicht für diese Last problemlos: 
 - **WLAN-Powersave.** Standardmäßig an, verursacht regelmäßig 100–300 ms Latenzspitzen und ist die häufigste Ursache für „reagiert träge". Abschalten: `iw dev wlan0 set power_save off`, dauerhaft per systemd-Unit oder NetworkManager-Setting.
 - **Unterspannung.** `vcgencmd get_throttled` und `dmesg | grep -i voltage` prüfen. Ein schwaches Netzteil oder ein dünnes Micro-USB-Kabel drosseln den Takt dauerhaft, das fühlt sich exakt wie „zu langsame Hardware" an.
 - **Reload-Modus.** Sicherstellen, dass der Dienst über den `sonos-moments`-Entrypoint (`main_without_reload`) startet und nicht über `python main.py`.
-- **Startart.** systemd-Unit mit `Restart=always` und `After=network-online.target`, Logs nach journald mit Rate-Limit, damit die SD-Karte nicht vollgeschrieben wird.
+- **Startart.** systemd-Unit mit `Restart=always` und `After=network-online.target`, Logs nach journald mit Rate-Limit, damit die SD-Karte nicht vollgeschrieben wird. Als Kommando `uv run sonos-moments`; uv gibt es als Binary für aarch64, armv7 und armv6.
 - **SD-Karte.** Billige Karten mit schlechten Random-Writes bremsen jeden Neustart und jedes Log. Mit `hdparm -t` bzw. `dd` gegenprüfen.
 
 Dazu die PWA-Kosmetik, damit das Ganze sich auf dem Handy wie eine App anfühlt: eine Route für `manifest.json`, `ui.add_head_html` mit `<link rel="manifest">`, `apple-mobile-web-app-capable` und `apple-mobile-web-app-status-bar-style`, plus Icons. Über iOS-Safari genügt das für „Zum Home-Bildschirm" inklusive Vollbild, auch ohne HTTPS. Offline-Fähigkeit gibt es nicht und braucht es nicht, weil die App ohne Heimnetz sowieso nichts steuern kann.
@@ -192,7 +200,7 @@ Der UI-Neubau gehört zeitlich zu Etappe 4: Erst dann steht das Datenmodell, das
 1. ~~**State-Layer und Registry.**~~ *(erledigt)* Geräte-Registry über UIDs mit IP-Cache und Hintergrund-Suche, prozessweiter State, UI rendert ohne Netzwerk-Calls, alle SoCo-Aufrufe in `to_thread`.
 2. ~~**Event-Subscriptions.**~~ *(erledigt)* Abos für RenderingControl, AVTransport und ZoneGroupTopology, Queue-Drain per Timer, Umhängen bei Topologie-Änderungen, Bindings statt Full-Refresh.
 3. ~~**Schreibpfad.**~~ *(erledigt)* Echo-Suppression, Drosselung, `sleep(1.0)`-Hack entfernt.
-4. **Moments und Quellen.** Quellen-Referenz statt Transport-URI, Favoriten-Menü und korrekte Restore-Reihenfolge sind erledigt. Offen: der Moment-Editor, queue-erhaltendes Capture für Playlists und der UI-Neubau.
+4. **Moments und Quellen.** Quellen-Referenz statt Transport-URI, Favoriten-Menü, korrekte Restore-Reihenfolge und der Abgleich statt stumpfem Wiederherstellen sind erledigt. Offen: der Moment-Editor, queue-erhaltendes Capture für Playlists und der UI-Neubau.
 5. **TuneIn-Suche.** Stöbern und Suchen nach Radiosendern direkt in der App.
 6. **Watchdog und Deployment.** Stale-Kennzeichnung, systemd-Unit, Powersave, PWA-Manifest. Die Resubscribe-Logik steckt bereits im Sync der Subscriptions.
 7. **Optional: SoundCloud und Mixcloud.** Auth-Flow mit Token-Store.
