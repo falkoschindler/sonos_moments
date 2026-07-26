@@ -23,6 +23,18 @@ Es gibt keine Testumgebung. Jeder Schreibzugriff geht an vier Lautsprecher in ei
 
 Fällt dir keine unaufdringliche Testmöglichkeit ein, frag lieber nach, statt Musik anzuwerfen.
 
+## Der Pi läuft mit
+
+Auf `penthouse` (Raspberry Pi Zero 2 W) läuft dieselbe Anwendung dauerhaft als systemd-Service. Deployment und Unit stehen in der [README](README.md#deployment), kurz: `./deploy.sh`.
+
+**Nur eine Instanz darf gleichzeitig mit den Speakern reden.** Sonst halten zwei Prozesse `ZoneGroupTopology`-Abos, und wegen der Falle unten stellt SoCo das Polling ein — beide sehen dann eine Gruppierung, die nie wieder aktualisiert wird. Vor lokalen Tests gegen dieselben Speaker also:
+
+```bash
+ssh -4 falko@penthouse.local 'sudo systemctl stop sonos_moments'
+```
+
+Wer dort arbeitet: 417 MB RAM, und unter Last wird er für Minuten unerreichbar, während Ping und TCP weiterlaufen. Das ist normal, er kommt von allein zurück — nicht den Stecker ziehen. Länger laufende Befehle immer abkoppeln (`nohup setsid … &`), sonst killt ein SSH-Abbruch sie mitten im Lauf.
+
 ## Fallen, die Zeit gekostet haben
 
 - Sobald ein `ZoneGroupTopology`-Abo besteht, hört SoCo auf, die Topologie zu pollen, und erwartet, dass der Abonnent den Cache füttert. Ohne das bleibt die Gruppierung für immer stehen. Siehe `System._read_topology`.
