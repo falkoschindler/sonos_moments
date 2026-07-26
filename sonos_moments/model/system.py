@@ -393,17 +393,25 @@ class System:
         await self.play(coordinator_uid)
         return True
 
-    async def capture(self) -> None:
-        moment = await asyncio.to_thread(Moment.capture, list(self.devices.values()), self.favorites,
-                                         f'Moment #{len(self.moments) + 1}')
-        self.moments.append(moment)
-        self.save()
+    async def capture(self) -> Moment:
+        """Capture the current state. The moment is only stored once the caller says so."""
+        return await asyncio.to_thread(Moment.capture, list(self.devices.values()), self.favorites,
+                                       f'Moment #{len(self.moments) + 1}')
 
     async def recapture(self, moment: Moment) -> None:
         new_moment = await asyncio.to_thread(Moment.capture, list(self.devices.values()), self.favorites, moment.name)
         new_moment.uid = moment.uid
-        self.moments[self.moments.index(moment)] = new_moment
-        self.unresolved.discard(moment.uid)
+        self.store(new_moment)
+
+    def store(self, moment: Moment) -> None:
+        """Add a moment, or put an edited one in the place of the one it was made from."""
+        for index, existing in enumerate(self.moments):
+            if existing.uid == moment.uid:
+                self.moments[index] = moment
+                break
+        else:
+            self.moments.append(moment)
+        self.unresolved.discard(moment.uid)  # whatever was wrong may well have been fixed
         self.save()
 
     def remove(self, moment: Moment) -> None:

@@ -63,8 +63,11 @@ The main area shows one card per group of speakers with what is playing there, b
 Below that, each speaker has its own row to control volume and mute.
 
 The bar at the bottom holds your moments.
-Tapping one restores it; the arrow next to it opens a menu to rename, re-capture or delete it.
-The button on the right captures the current state of the speakers as a new moment and asks for a name.
+Tapping one restores it; the arrow next to it opens a menu to edit, re-capture or delete it.
+The button on the right captures the current state of the speakers as a new moment.
+
+Both lead into the same editor, where a moment is put together rather than only recorded: give it a name, pick the rooms of each group, choose a source from your Sonos favorites and set the volume of every speaker.
+So you can build a moment for tomorrow morning without waking anyone up tonight.
 
 ## Vision
 

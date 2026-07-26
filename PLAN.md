@@ -4,9 +4,9 @@ Ziel: Live-Updates statt Polling, spürbar schnellere UI, robuster Dauerbetrieb 
 
 ## Stand
 
-Auf Branch `rebuild-event-driven` umgesetzt und gegen das laufende System verifiziert: Etappe 1 (Registry und State-Layer), Etappe 2 (Event-Subscriptions), Etappe 3 (Schreibpfad) und vom Etappe-4-Paket das Datenmodell (Quellen-Referenzen), das Favoriten-Menü, der Abgleich beim Abspielen und der UI-Neubau. Dazu kam unabhängig davon der Umstieg von Poetry auf uv samt Modernisierung der pre-commit-Hooks und ein Packaging-Fix, durch den `icon.png` überhaupt erst im Wheel landet.
+Auf Branch `rebuild-event-driven` umgesetzt und gegen das laufende System verifiziert: Etappe 1 (Registry und State-Layer), Etappe 2 (Event-Subscriptions), Etappe 3 (Schreibpfad) und vom Etappe-4-Paket das Datenmodell (Quellen-Referenzen), das Favoriten-Menü, der Abgleich beim Abspielen, der UI-Neubau und der Moment-Editor. Dazu kam unabhängig davon der Umstieg von Poetry auf uv samt Modernisierung der pre-commit-Hooks und ein Packaging-Fix, durch den `icon.png` überhaupt erst im Wheel landet.
 
-**Als Nächstes** steht der Rest von Etappe 4 an: der Moment-Editor und das queue-erhaltende Capture. Danach TuneIn-Suche, dann Watchdog und Deployment.
+**Als Nächstes** steht der Rest von Etappe 4 an: das queue-erhaltende Capture. Danach TuneIn-Suche, dann Watchdog und Deployment.
 
 **Offene Kleinigkeiten**, die noch niemand entschieden hat:
 
@@ -169,7 +169,7 @@ Die bestehende UI hat drei Annahmen eingebaut, die der Umbau kippt, und das ist 
 
 **Drittens zeigt die UI nicht, was läuft.** Es gibt Play/Pause/Stop, aber weder Sender noch Titel. Mit `AVTransport`-Events fällt beides praktisch gratis an und ist genau die Information, für die man sonst die offizielle App aufmacht. „Küche: radioeins" pro Gruppe ist wahrscheinlich der größte wahrgenommene Qualitätssprung im ganzen Umbau.
 
-Dazu ein Moment-Editor, der aus dem Quellen-Feature folgt: Räume auswählen, Lautstärken setzen, Quelle aus Favoriten oder Suche wählen, speichern. Damit ersetzt „Moment anlegen" den Umweg über die Sonos-App, und „Re-capture" wird vom Hauptweg zur Abkürzung.
+Dazu ein Moment-Editor, der aus dem Quellen-Feature folgt: Räume auswählen, Lautstärken setzen, Quelle aus Favoriten oder Suche wählen, speichern. Damit ersetzt „Moment anlegen" den Umweg über die Sonos-App, und „Re-capture" wird vom Hauptweg zur Abkürzung. *(Gebaut als Dialog auf einer Kopie des Moments — pro Gruppe eine Karte mit Quellen-Auswahl, Play-Schalter und allen Räumen zum Ankreuzen. Capture führt direkt hinein, sodass ein neuer Moment vor dem Speichern noch angepasst werden kann. Die Suche als Quelle fehlt noch, siehe Etappe 5.)*
 
 Kleinigkeiten fürs Handy: Der `ui.knob` ist am Desktop hübsch, mit dem Daumen aber fummelig — Slider mit großer Trefferfläche plus die vorhandenen +/−-Buttons sind dort die bessere Wahl. Und da die UI künftig live aktualisiert, muss das Rendern feingranular an den State gebunden sein, sonst schließen sich bei jedem eingehenden Event offene Menüs und Dialoge.
 
@@ -204,7 +204,7 @@ Der UI-Neubau gehört zeitlich zu Etappe 4: Erst dann steht das Datenmodell, das
 1. ~~**State-Layer und Registry.**~~ *(erledigt)* Geräte-Registry über UIDs mit IP-Cache und Hintergrund-Suche, prozessweiter State, UI rendert ohne Netzwerk-Calls, alle SoCo-Aufrufe in `to_thread`.
 2. ~~**Event-Subscriptions.**~~ *(erledigt)* Abos für RenderingControl, AVTransport und ZoneGroupTopology, Queue-Drain per Timer, Umhängen bei Topologie-Änderungen, Bindings statt Full-Refresh.
 3. ~~**Schreibpfad.**~~ *(erledigt)* Echo-Suppression, Drosselung, `sleep(1.0)`-Hack entfernt.
-4. **Moments und Quellen.** Quellen-Referenz statt Transport-URI, Favoriten-Menü, korrekte Restore-Reihenfolge, der Abgleich statt stumpfem Wiederherstellen und der UI-Neubau sind erledigt. Offen: der Moment-Editor und queue-erhaltendes Capture für Playlists.
+4. **Moments und Quellen.** Quellen-Referenz statt Transport-URI, Favoriten-Menü, korrekte Restore-Reihenfolge, Abgleich statt stumpfem Wiederherstellen, UI-Neubau und Moment-Editor sind erledigt. Offen: queue-erhaltendes Capture für Playlists.
 5. **TuneIn-Suche.** Stöbern und Suchen nach Radiosendern direkt in der App.
 6. **Watchdog und Deployment.** Stale-Kennzeichnung, systemd-Unit, Powersave, PWA-Manifest. Die Resubscribe-Logik steckt bereits im Sync der Subscriptions.
 7. **Optional: SoundCloud und Mixcloud.** Auth-Flow mit Token-Store.

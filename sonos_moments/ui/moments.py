@@ -3,6 +3,7 @@ from functools import partial
 from nicegui import ui
 
 from ..model import Moment, System
+from .editor import edit_moment
 
 
 @ui.refreshable
@@ -34,11 +35,10 @@ def _moment_button(system: System, moment: Moment) -> None:
             ui.notify(f'"{moment.name}" is already playing like this', type='info')
         moments_ui.refresh()  # a source may have turned out to be unresolvable
 
-    async def rename() -> None:
-        name = await _ask_for_name(moment.name)
-        if name:
-            moment.name = name
-            system.save()
+    async def edit() -> None:
+        edited = await edit_moment(system, moment)
+        if edited is not None:
+            system.store(edited)
             moments_ui.refresh()
 
     async def recapture() -> None:
@@ -61,31 +61,15 @@ def _moment_button(system: System, moment: Moment) -> None:
                 .props('header').classes('text-orange-600 whitespace-normal max-w-64')
         elif moment.description:
             ui.item_label(moment.description).props('header').classes('whitespace-normal max-w-64')
-        ui.item('Rename', on_click=rename)
+        ui.item('Edit', on_click=edit)
         ui.item('Re-capture', on_click=recapture)
         ui.item('Delete', on_click=remove)
 
 
 async def _capture(system: System) -> None:
-    await system.capture()
-    moments_ui.refresh()
-    moment = system.moments[-1]
-    name = await _ask_for_name(moment.name)
-    if name:
-        moment.name = name
-        system.save()
+    """Capture the current state and show it in the editor, so it can be named and adjusted."""
+    captured = await system.capture()
+    moment = await edit_moment(system, captured)
+    if moment is not None:
+        system.store(moment)
         moments_ui.refresh()
-
-
-async def _ask_for_name(current: str) -> str | None:
-    """Ask for a name, returning None when the dialog is dismissed."""
-    with ui.dialog() as dialog, ui.card().classes('w-72'):
-        name = ui.input('Name', value=current).props('autofocus outlined dense selectall').classes('w-full')
-        name.on('keydown.enter', lambda: dialog.submit(name.value))
-        with ui.row().classes('w-full justify-end'):
-            ui.button('Cancel', on_click=dialog.close).props('flat')
-            ui.button('Save', on_click=lambda: dialog.submit(name.value))
-    try:
-        return await dialog
-    finally:
-        dialog.delete()  # the dialog lives in a refreshable slot and would pile up otherwise
