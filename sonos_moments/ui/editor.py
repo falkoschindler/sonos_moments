@@ -5,6 +5,7 @@ from typing import Any
 from nicegui import events, ui
 
 from ..model import Device, Group, Moment, Source, System
+from .stations import choose_station
 
 NO_SOURCE = ''  # option for a moment that only sets grouping and levels
 KEEP_SOURCE = '#keep'  # option for a source that is not one of the favorites
@@ -82,7 +83,13 @@ def _group_card(form: _Form, group: Group) -> None:
 
 
 def _source_select(form: _Form, group: Group) -> None:
-    """Offer the favorites, plus whatever the moment already points at."""
+    """Offer the favorites and the TuneIn directory, plus whatever the moment already points at."""
+    async def search() -> None:
+        source = await choose_station(form.system)
+        if source is not None:
+            group.source = source
+            form.refresh()
+
     favorites = form.system.favorites
     options = {NO_SOURCE: 'Nothing (only grouping and volume)'}
     if group.source.kind == 'favorite':
@@ -106,8 +113,11 @@ def _source_select(form: _Form, group: Group) -> None:
             group.source = Source(kind='none')
         # every other option is the source the moment already has, so it stays as it is
 
-    ui.select(options, value=value, label='Source', on_change=select) \
-        .props('outlined dense options-dense').classes('w-full')
+    with ui.row(align_items='center').classes('w-full gap-1 flex-nowrap'):
+        ui.select(options, value=value, label='Source', on_change=select) \
+            .props('outlined dense options-dense').classes('grow min-w-0')
+        ui.button(icon='sym_r_search', on_click=search).props('flat round') \
+            .tooltip('Search TuneIn for a station')
 
 
 def _transport_switch(group: Group) -> None:

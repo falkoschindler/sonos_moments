@@ -14,6 +14,7 @@ from .plan import Plan, plan
 from .registry import Registry
 from .source import Favorite, Source
 from .state import GroupState, SystemState
+from .tunein import Directory, Entry
 
 log = logging.getLogger(__name__)
 
@@ -72,6 +73,7 @@ class System:
         self.state = SystemState()
         self.registry = Registry()
         self.subscriptions = Subscriptions()
+        self.directory = Directory()
         self.devices: dict[str, soco.SoCo] = {}
         self.moments: list[Moment] = []
         self.favorites: list[Favorite] = []
@@ -113,6 +115,17 @@ class System:
         if favorites is not None:
             self.favorites = favorites
             self._notify()
+
+    async def browse_stations(self, folder_id: str = '') -> list[Entry] | None:
+        """List a folder of the TuneIn directory. None means the service could not be reached."""
+        if not self.devices:
+            return None
+        return await self._read(self.directory.browse, next(iter(self.devices.values())), folder_id)
+
+    async def search_stations(self, term: str) -> list[Entry] | None:
+        if not self.devices:
+            return None
+        return await self._read(self.directory.search, next(iter(self.devices.values())), term)
 
     async def _connect(self, connect: Callable[[], list[soco.SoCo]]) -> None:
         self.state.searching = True
@@ -385,10 +398,10 @@ class System:
         await self.refresh()
         return refused
 
-    async def play_favorite(self, favorite: Favorite, coordinator_uid: str) -> bool:
-        """Start a favorite on a group, so that a source can be chosen without the Sonos app."""
-        source = Source(kind='uri', title=favorite.title, uri=favorite.uri, meta=favorite.meta)
-        if not await self._write(source.apply, coordinator_uid):
+    async def play_source(self, source: Source, coordinator_uid: str) -> bool:
+        """Start a source on a group, so that one can be chosen without the Sonos app."""
+        resolved = source.resolve(self.favorites)
+        if resolved is None or not await self._write(resolved.apply, coordinator_uid):
             return False
         await self.play(coordinator_uid)
         return True

@@ -6,9 +6,11 @@ from .registry import Registry
 from .source import Favorite, Source, Track
 from .state import GroupState, PlayerState, SystemState
 from .system import System
+from .tunein import Entry
 
 __all__ = [
     'Device',
+    'Entry',
     'Favorite',
     'Group',
     'GroupState',

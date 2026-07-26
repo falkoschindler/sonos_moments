@@ -40,6 +40,7 @@ Wer dort arbeitet: 417 MB RAM, und unter Last wird er für Minuten unerreichbar,
 - Sobald ein `ZoneGroupTopology`-Abo besteht, hört SoCo auf, die Topologie zu pollen, und erwartet, dass der Abonnent den Cache füttert. Ohne das bleibt die Gruppierung für immer stehen. Siehe `System._read_topology`.
 - In UPnP-Events sind Metadaten ein leerer String, wenn es nichts zu melden gibt. `getattr('', 'title', '')` liefert dann die Methode `str.title` statt des Defaults. Dafür gibt es `_text()`.
 - Nach dem Setzen einer neuen Stream-Quelle braucht der Speaker rund eine Sekunde, bevor er `play()` annimmt, sonst `UPnP Error 701`.
+- Zwei Controller gleichzeitig sind auch lokal ein Problem: Läuft die App, während ein Skript direkt auf dieselben Speaker schreibt, kommen `UPnP Error 402` und Read-Timeouts zurück, die nach einem Fehler im eigenen Code aussehen. Vor solchen Skripten die lokale Instanz beenden.
 - Ein Refresh erstreckt sich über mehrere `await`s. Nichts, was `state.groups` austauscht, darf dazwischenfunken — dafür gibt es das Lock in `System.refresh`.
 
 ## Konventionen

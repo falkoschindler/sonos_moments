@@ -4,11 +4,13 @@ Ziel: Live-Updates statt Polling, spürbar schnellere UI, robuster Dauerbetrieb 
 
 ## Stand
 
-Auf Branch `rebuild-event-driven` umgesetzt: Etappe 1 (Registry und State-Layer), Etappe 2 (Event-Subscriptions), Etappe 3 (Schreibpfad) und Etappe 4 (Quellen-Referenzen, Favoriten-Menü, Abgleich beim Abspielen, UI-Neubau, Moment-Editor, queue-erhaltendes Capture). Dazu kam unabhängig davon der Umstieg von Poetry auf uv samt Modernisierung der pre-commit-Hooks, ein Packaging-Fix, durch den `icon.png` überhaupt erst im Wheel landet, und — aus Etappe 6 vorgezogen — das PWA-Manifest.
+Auf Branch `rebuild-event-driven` umgesetzt: Etappe 1 (Registry und State-Layer), Etappe 2 (Event-Subscriptions), Etappe 3 (Schreibpfad), Etappe 4 (Quellen-Referenzen, Favoriten-Menü, Abgleich beim Abspielen, UI-Neubau, Moment-Editor, queue-erhaltendes Capture) und Etappe 5 (TuneIn stöbern und suchen). Dazu kam unabhängig davon der Umstieg von Poetry auf uv samt Modernisierung der pre-commit-Hooks, ein Packaging-Fix, durch den `icon.png` überhaupt erst im Wheel landet, und — aus Etappe 6 vorgezogen — das PWA-Manifest.
 
-Gegen das laufende System verifiziert ist alles davon außer dem Wiederherstellen einer Queue: Dafür müsste etwas in einer Queue liegen, und es gibt derzeit weder eine lokale Bibliothek (`list_library_shares()` ist leer) noch einen verknüpften Dienst, aus dem sich etwas einreihen ließe. Der Pfad ist nur durch Tests des Speicherformats abgedeckt.
+Bei der TuneIn-Suche sind Stöbern, Suchen und das Abspielen einer gefundenen Station gegen das laufende System verifiziert; der Auswahl-Dialog selbst ist bisher nur durch Lint und Tests abgedeckt, nicht im Browser durchgeklickt.
 
-**Als Nächstes** steht Etappe 5 an, die TuneIn-Suche. Danach Watchdog und Deployment.
+Gegen das laufende System verifiziert ist ansonsten alles außer dem Wiederherstellen einer Queue: Dafür müsste etwas in einer Queue liegen, und es gibt derzeit weder eine lokale Bibliothek (`list_library_shares()` ist leer) noch einen verknüpften Dienst, aus dem sich etwas einreihen ließe. Der Pfad ist nur durch Tests des Speicherformats abgedeckt.
+
+**Als Nächstes** steht Etappe 6 an: Stale-Kennzeichnung, systemd-Unit und WLAN-Powersave.
 
 **Offene Kleinigkeiten**, die noch niemand entschieden hat:
 
@@ -109,6 +111,7 @@ Konsequenz: Ein Moment speichert pro Gruppe nicht die Transport-URI, sondern ein
 | Typ | Inhalt | Robustheit |
 |---|---|---|
 | `favorite` | Titel + Item-ID des Sonos-Favoriten | am höchsten — Sonos pflegt die Favoriten selbst über Account-Wechsel hinweg |
+| `station` | Titel + Id einer TuneIn-Station | ebenso hoch — der anonyme Dienst hat keine Account-Bindung, die verfallen könnte |
 | `uri` | Transport-URI samt Metadaten | der Notnagel für alles, was kein Favorit ist |
 | `queue` | Queue-Inhalt als URI + DIDL pro Track, Tracknummer, Position | für Playlists und Alben |
 | `none` | nichts | Moment setzt nur Gruppierung und Lautstärken |
@@ -139,14 +142,19 @@ Ziel ist, dass ein Moment in Sonos Moments **zusammengestellt** und nicht nur mi
 
 **Sonos-Favoriten funktionieren sofort und ohne jede Authentifizierung.** `music_library.get_sonos_favorites()` liefert aktuell 23 Einträge, überwiegend Radiosender (WDR 2/3/5, 1LIVE, FluxFM, Bremen Zwei, radioeins, SomaFM, Klassik Radio Piano, House FM …) plus eine SoundCloud-Playlist. Da die Quellen ohnehin schon dort gepflegt sind, deckt ein simpler Favoriten-Browser den Alltag vermutlich fast vollständig ab. Drei Einträge sind Sonos-Werbe-Kacheln ohne abspielbare Resource („Discover Sonos Radio", „Sonos Presents", „Trending Now") — die müssen beim Auflisten weggefiltert werden.
 
-**TuneIn-Suche funktioniert ebenfalls sofort und ohne Auth.** Der klassische TuneIn-Dienst (`sid=254`) hat den Auth-Typ `Anonymous`. Getestet:
+**TuneIn-Suche funktioniert ebenfalls sofort und ohne Auth.** *(umgesetzt — `model/tunein.py` und `ui/stations.py`)* Der klassische TuneIn-Dienst (`sid=254`) hat den Auth-Typ `Anonymous`. Suchkategorien sind `stations`, `shows`, `hosts`; wir bieten nur `stations` an. Gestöbert wird über `get_metadata()`, das denselben Baum liefert wie die Sonos-App — dabei ist die **rohe Id aus `metadata['id']`** zu verwenden, nicht `item_id`: die trägt ein `0fffffff`-Präfix, das der Dienst nicht zurücknimmt.
 
-```python
-MusicService('TuneIn').search(category='stations', term='radioeins')
-# -> MSStream 'radioeins' (s25111), 'radioeins Cottbus' (s309554), 'Radio EINS' (s119567), …
-```
+Der fummelige Teil war wie erwartet das Abspielen, und die Antwort ist nicht die, die SoCo nahelegt. Am laufenden System durchprobiert:
 
-Suchkategorien sind `stations`, `shows`, `hosts`. Damit lässt sich das Stöbern und Suchen nach Radiosendern vollständig in der App abbilden. Zu verifizieren ist beim Umsetzen noch das Abspielen: `sonos_uri_from_id()` liefert eine `soco://`-Pseudo-URI, und Dienst-Items brauchen beim `play_uri` die passenden DIDL-Metadaten inklusive Service-Descriptor. Das ist der fummelige Teil.
+| URI-Form | Ergebnis |
+|---|---|
+| `x-sonosapi-stream:s25111?sid=254&sn=0` | spielt |
+| `soco://0fffffffs25111?sid=254&sn=0` (`sonos_uri_from_id()`) | UPnP Error 714 |
+| `x-rincon-cpcontainer:0fffffffs25111` (die `uri` des Suchtreffers) | UPnP Error 714 |
+
+Dazu müssen DIDL-Metadaten mit `object.item.audioItem.audioBroadcast` und dem Service-Descriptor `SA_RINCON65031_` mitgehen, sonst weiß der Speaker nicht, wen er nach dem Stream fragen soll.
+
+**`flags` bewusst weglassen.** Mit `flags=8224` löst der Speaker die Station gegen den verknüpften Dienst auf und schreibt die URI auf `sid=303&sn=5` um — also genau auf die Form mit Account-Seriennummer, an der die alten Moments gestorben sind. Ohne `flags` bleibt sie beim anonymen TuneIn-Dienst und damit haltbar. Deshalb ist eine Station kein `uri`-Moment, sondern eine eigene Quellen-Art `station`, die nur die Stations-Id speichert und die URI beim Abspielen daraus baut — ohne Netzwerk, also auch ohne die Möglichkeit, unauflösbar zu werden.
 
 **SoundCloud und Mixcloud brauchen eine eigene Anmeldung in unserer App.** Beide antworten momentan mit Auth-Fehlern:
 
@@ -211,7 +219,7 @@ Der UI-Neubau gehört zeitlich zu Etappe 4: Erst dann steht das Datenmodell, das
 2. ~~**Event-Subscriptions.**~~ *(erledigt)* Abos für RenderingControl, AVTransport und ZoneGroupTopology, Queue-Drain per Timer, Umhängen bei Topologie-Änderungen, Bindings statt Full-Refresh.
 3. ~~**Schreibpfad.**~~ *(erledigt)* Echo-Suppression, Drosselung, `sleep(1.0)`-Hack entfernt.
 4. ~~**Moments und Quellen.**~~ *(erledigt)* Quellen-Referenz statt Transport-URI, Favoriten-Menü, korrekte Restore-Reihenfolge, Abgleich statt stumpfem Wiederherstellen, UI-Neubau, Moment-Editor und queue-erhaltendes Capture.
-5. **TuneIn-Suche.** Stöbern und Suchen nach Radiosendern direkt in der App.
+5. ~~**TuneIn-Suche.**~~ *(erledigt)* Stöbern und Suchen nach Radiosendern direkt in der App, als Quelle im Moment-Editor und zum sofortigen Abspielen aus der Raum-Karte.
 6. **Watchdog und Deployment.** Stale-Kennzeichnung, systemd-Unit, Powersave. Die Resubscribe-Logik steckt bereits im Sync der Subscriptions, das PWA-Manifest ist vorgezogen und erledigt.
 7. **Optional: SoundCloud und Mixcloud.** Auth-Flow mit Token-Store.
 

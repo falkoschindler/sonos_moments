@@ -128,6 +128,22 @@ def test_an_empty_queue_is_reported():
     assert not result.sources
 
 
+def test_a_running_station_is_left_alone():
+    """The speaker reports the station with flags it added itself, but it is the same station."""
+    result = plan(moment_with({'a': ['a']}, source=Source.station('s25111', 'radioeins')),
+                  state_with({'a': ['a']}, uri='x-sonosapi-stream:s25111?sid=254&flags=8232&sn=0'),
+                  FAVORITES)
+    assert result.is_empty
+
+
+def test_another_station_is_set():
+    result = plan(moment_with({'a': ['a']}, source=Source.station('s44491', 'BBC Radio 6 Music')),
+                  state_with({'a': ['a']}, uri='x-sonosapi-stream:s25111?sid=254&flags=8232&sn=0'),
+                  FAVORITES)
+    assert result.sources['a'].uri == 'x-sonosapi-stream:s44491?sid=254&sn=0'
+    assert result.transport == {'a': 'PLAYING'}
+
+
 @pytest.mark.parametrize('kind', ['none', 'uri'])
 def test_sourceless_moments(kind):
     source = Source(kind=kind, uri='' if kind == 'none' else RADIOEINS_PLAYING)

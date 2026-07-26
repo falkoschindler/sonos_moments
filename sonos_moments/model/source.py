@@ -4,6 +4,8 @@ from urllib.parse import unquote
 
 import soco
 
+from .tunein import station_meta, station_uri
+
 CONTAINER_PREFIXES = ('x-rincon-cpcontainer:', 'x-rincon-playlist:')
 QUEUE_PREFIX = 'x-rincon-queue:'  # a speaker playing its own queue, which says nothing about the contents
 
@@ -59,9 +61,9 @@ class Source:
     URIs carry an account serial number that changes when a service is re-linked or migrated.
     A favorite, on the other hand, is kept working by Sonos itself.
     """
-    kind: Literal['favorite', 'uri', 'queue', 'none']
+    kind: Literal['favorite', 'station', 'uri', 'queue', 'none']
     title: str = ''
-    item_id: str = ''
+    item_id: str = ''  # of the favorite, or the id of the TuneIn station
     uri: str = ''
     meta: str = ''
     tracks: list[Track] = field(default_factory=list)
@@ -92,12 +94,21 @@ class Source:
         return cls(kind='queue', title=title, tracks=tracks,
                    track_number=track_number, track_position=track_position)
 
+    @classmethod
+    def station(cls, station_id: str, title: str) -> Self:
+        """Point at a TuneIn station, which is as durable as a favorite and needs no lookup."""
+        return cls(kind='station', title=title, item_id=station_id)
+
     def resolve(self, favorites: list[Favorite]) -> Self | None:
         """Return the source to play, or None if it cannot be found any more.
 
         A favorite is looked up freshly every time, because surviving a re-linked music service is
         the entire reason for storing one.
         """
+        if self.kind == 'station':
+            # nothing to look up: the station id is stable and the URI is built from it
+            return type(self)(kind='uri', title=self.title, item_id=self.item_id,
+                              uri=station_uri(self.item_id), meta=station_meta(self.item_id, self.title))
         if self.kind == 'favorite':
             favorite = next((favorite for favorite in favorites if favorite.item_id == self.item_id), None) \
                 or next((favorite for favorite in favorites if favorite.title == self.title), None)

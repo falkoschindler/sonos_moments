@@ -1,6 +1,7 @@
 from nicegui import events, ui
 
-from ..model import GroupState, PlayerState, System
+from ..model import GroupState, PlayerState, Source, System
+from .stations import choose_station
 
 
 @ui.refreshable
@@ -68,16 +69,25 @@ def _transport(system: System, group: GroupState) -> None:
 
 
 def _favorites(system: System, group: GroupState) -> None:
+    async def start(source: Source, coordinator_uid: str = group.coordinator_uid) -> None:
+        if not await system.play_source(source, coordinator_uid):
+            ui.notify(f'"{source.title}" could not be started. '
+                      'Its music service may no longer be linked to your household.',
+                      type='warning')
+
+    async def search(coordinator_uid: str = group.coordinator_uid) -> None:
+        source = await choose_station(system)
+        if source is not None:
+            await start(source, coordinator_uid)
+
     with ui.button(icon='sym_r_radio').props('flat round'), ui.menu().classes('max-h-96'):
+        ui.item('Search stations...', on_click=search)
+        ui.separator()
         if not system.favorites:
             ui.item('No favorites found')
         for favorite in system.favorites:
-            async def start(favorite=favorite, coordinator_uid=group.coordinator_uid) -> None:
-                if not await system.play_favorite(favorite, coordinator_uid):
-                    ui.notify(f'"{favorite.title}" could not be started. '
-                              'Its music service may no longer be linked to your household.',
-                              type='warning')
-            ui.item(favorite.title, on_click=start)
+            source = Source(kind='uri', title=favorite.title, uri=favorite.uri, meta=favorite.meta)
+            ui.item(favorite.title, on_click=lambda source=source: start(source))
 
 
 def _grouping(system: System, group: GroupState) -> None:
