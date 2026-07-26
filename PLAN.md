@@ -4,13 +4,13 @@ Ziel: Live-Updates statt Polling, spürbar schnellere UI, robuster Dauerbetrieb 
 
 ## Stand
 
-Auf Branch `rebuild-event-driven` umgesetzt: Etappe 1 (Registry und State-Layer), Etappe 2 (Event-Subscriptions), Etappe 3 (Schreibpfad), Etappe 4 (Quellen-Referenzen, Favoriten-Menü, Abgleich beim Abspielen, UI-Neubau, Moment-Editor, queue-erhaltendes Capture) und Etappe 5 (TuneIn stöbern und suchen). Dazu kam unabhängig davon der Umstieg von Poetry auf uv samt Modernisierung der pre-commit-Hooks, ein Packaging-Fix, durch den `icon.png` überhaupt erst im Wheel landet, und — aus Etappe 6 vorgezogen — das PWA-Manifest.
+Auf Branch `rebuild-event-driven` umgesetzt: Etappe 1 (Registry und State-Layer), Etappe 2 (Event-Subscriptions), Etappe 3 (Schreibpfad), Etappe 4 (Quellen-Referenzen, Favoriten-Menü, Abgleich beim Abspielen, UI-Neubau, Moment-Editor, queue-erhaltendes Capture) Etappe 5 (TuneIn stöbern und suchen) und aus Etappe 6 die Stale-Kennzeichnung. Dazu kam unabhängig davon der Umstieg von Poetry auf uv samt Modernisierung der pre-commit-Hooks, ein Packaging-Fix, durch den `icon.png` überhaupt erst im Wheel landet, und — aus Etappe 6 vorgezogen — das PWA-Manifest.
 
-Bei der TuneIn-Suche sind Stöbern, Suchen und das Abspielen einer gefundenen Station gegen das laufende System verifiziert; der Auswahl-Dialog selbst ist bisher nur durch Lint und Tests abgedeckt, nicht im Browser durchgeklickt.
+Bei der TuneIn-Suche sind Stöbern, Suchen, das Abspielen einer gefundenen Station und der Auswahl-Dialog im Browser verifiziert. Die Stale-Kennzeichnung ebenfalls: mit einem erfundenen fünften Speaker in der Registry, der nie antwortet — so ließ sich das Ausgrauen prüfen, ohne einem echten Speaker den Strom zu nehmen.
 
 Gegen das laufende System verifiziert ist ansonsten alles außer dem Wiederherstellen einer Queue: Dafür müsste etwas in einer Queue liegen, und es gibt derzeit weder eine lokale Bibliothek (`list_library_shares()` ist leer) noch einen verknüpften Dienst, aus dem sich etwas einreihen ließe. Der Pfad ist nur durch Tests des Speicherformats abgedeckt.
 
-**Als Nächstes** steht Etappe 6 an: Stale-Kennzeichnung, systemd-Unit und WLAN-Powersave.
+**Als Nächstes**: Von Etappe 6 ist die Stale-Kennzeichnung erledigt; der Rest betrifft den Pi (WLAN-Powersave, Unterspannung, SD-Karte) und ist zurückgestellt, solange es mit dem Gerät Probleme gibt. Damit ist der Umbau inhaltlich durch, und es geht mit Feature-Wünschen weiter — die Roadmap im README nennt Gruppenlautstärke, Alarme, Timer und Medienlinks.
 
 **Offene Kleinigkeiten**, die noch niemand entschieden hat:
 
@@ -88,9 +88,17 @@ Neu zu lösen ist die Echo-Problematik: Während man am Knob dreht, feuert der S
 
 ### 6. Robustheit
 
+*(umgesetzt bis auf die Punkte, die den Pi betreffen)*
+
 Ein Watchdog-Timer (z. B. alle 60 s) prüft, ob alle Subscriptions noch leben, und baut sie sonst neu auf. Nötig, weil Speaker rebooten, Firmware-Updates einspielen und WLAN wegbricht. Zusätzlich ein „stale"-Kennzeichen im State: wenn ein Player länger als X Minuten kein Event geschickt und auch nicht auf einen Ping geantwortet hat, wird er in der UI ausgegraut statt mit veralteten Werten angezeigt. Beim Prozessende alle Subscriptions explizit `unsubscribe()` — sonst schicken die Speaker noch minutenlang NOTIFYs ins Leere.
 
 Geräte fliegen dabei **nicht** automatisch aus der Registry, sondern bleiben ausgegraut stehen: Ein Speaker an einer abgeschalteten Steckdose ist der Normalfall, kein Fehler. Aufräumen passiert nur von Hand. Der Watchdog nimmt einen ausgegrauten Player periodisch wieder in den Verbindungsversuch auf, damit er nach dem Einschalten von allein zurückkommt.
+
+**So gebaut:** Ein Lebenszeichen ist beides — eine beantwortete Abfrage *und* ein eingehendes Event. Das ist der Grund, warum `last_seen` nicht einfach aus dem Refresh kommt: Ein Speaker, der gerade Events schickt, darf nicht ausgegraut werden, nur weil eine Abfrage in eine Zeitüberschreitung gelaufen ist. Erst nach `STALE_AFTER` (120 s) ohne jedes Lebenszeichen fällt `online` um; ein Schreibfehler graut sofort aus, weil der Beweis dann schon da ist.
+
+Sichtbar wird das an zwei Stellen: Ein nicht erreichbarer Speaker, den die Topologie noch führt, behält seine Zeile in der Gruppe, verliert aber die Bedienelemente — ein Slider, der nichts bewegt, ist schlimmer als gar keiner. Ein Speaker, der ganz aus der Topologie verschwunden ist, landet in einer eigenen Karte unter den Gruppen, ausgegraut und mit „not reachable". Er verschwindet ausdrücklich nicht: ein Raum, der sich stillschweigend aus der Liste verabschiedet, sieht nach einem Fehler in der App aus und nicht nach einem gezogenen Stecker.
+
+Zurück kommt er über `Registry.reconnect()`, das der Refresh nur dann aufruft, wenn überhaupt jemand fehlt. Es probiert die bekannten Adressen parallel an (eine halbe Sekunde für alle zusammen) und fragt einen, der antwortet, nach dem Haushalt — das fängt zusätzlich die Speaker ein, deren Adresse sich geändert hat und die ein Anpingen der gemerkten IP deshalb nie finden würde. Eine echte Suche bleibt der Knopf in der UI; einmal pro Minute wäre sie viel zu teuer.
 
 ### 7. Moments neu aufsetzen
 
@@ -220,7 +228,7 @@ Der UI-Neubau gehört zeitlich zu Etappe 4: Erst dann steht das Datenmodell, das
 3. ~~**Schreibpfad.**~~ *(erledigt)* Echo-Suppression, Drosselung, `sleep(1.0)`-Hack entfernt.
 4. ~~**Moments und Quellen.**~~ *(erledigt)* Quellen-Referenz statt Transport-URI, Favoriten-Menü, korrekte Restore-Reihenfolge, Abgleich statt stumpfem Wiederherstellen, UI-Neubau, Moment-Editor und queue-erhaltendes Capture.
 5. ~~**TuneIn-Suche.**~~ *(erledigt)* Stöbern und Suchen nach Radiosendern direkt in der App, als Quelle im Moment-Editor und zum sofortigen Abspielen aus der Raum-Karte.
-6. **Watchdog und Deployment.** Stale-Kennzeichnung, systemd-Unit, Powersave. Die Resubscribe-Logik steckt bereits im Sync der Subscriptions, das PWA-Manifest ist vorgezogen und erledigt.
+6. **Watchdog und Deployment.** Stale-Kennzeichnung, Resubscribe-Logik und PWA-Manifest sind erledigt. Offen ist nur noch, was den Pi selbst betrifft: WLAN-Powersave, Unterspannung, SD-Karte. Das ist zurückgestellt, solange es mit dem Gerät Probleme gibt.
 7. **Optional: SoundCloud und Mixcloud.** Auth-Flow mit Token-Store.
 
 Etappen 1 bis 3 hängen inhaltlich zusammen und ergeben zusammen den eigentlichen Umbau; danach ist Etappe 4 der Teil mit dem größten Alltagsnutzen.

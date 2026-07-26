@@ -22,6 +22,7 @@ soco.config.REQUEST_TIMEOUT = 5.0  # the default of 20 s would freeze the app wh
 
 WRITE_INTERVAL = 0.1  # minimum distance between two commands to the same speaker while dragging a knob
 ECHO_TIMEOUT = 1.0  # how long a speaker may keep reporting outdated values after we have written
+STALE_AFTER = 120.0  # how long a speaker may stay silent before it is shown as gone
 
 Topology = list[tuple[str, list[str]]]
 
@@ -151,11 +152,15 @@ class System:
             await self._refresh()
 
     async def _refresh(self) -> None:
+        await self._recover()
         if not self.devices:
+            self.state.forget_silent(time.monotonic(), STALE_AFTER)
             self._notify()
             return
         topology = await self._read(self._read_topology)
         readings = await asyncio.gather(*(self._read(self._read_player, device) for device in self.devices.values()))
+        changed = False
+        now = time.monotonic()
         for reading in readings:
             if reading is None:
                 continue
@@ -163,19 +168,41 @@ class System:
             player = self.state.player(uid)
             player.volume = volume
             player.mute = mute
+            changed |= self.state.seen(uid, now)
         online = {reading[0] for reading in readings if reading is not None}
-        for player in self.state.players.values():
-            player.online = player.uid in online
+        changed |= self.state.forget_silent(now, STALE_AFTER)
+        if changed:
+            self._notify()
         if topology is None:
             topology = self._current_topology() if online else []
         await self._apply_topology(topology)
         await asyncio.to_thread(self.subscriptions.sync, self.devices,
                                 {group.coordinator_uid for group in self.state.groups})
 
+    async def _recover(self) -> None:
+        """Try to reach speakers we have no connection to, so they come back on their own.
+
+        A speaker that was switched off is not dropped from the registry, so this is what brings
+        it back after it has been switched on again. Only known addresses are probed; a full
+        search stays a button in the UI, because it is far too expensive to run every minute.
+        """
+        if self.devices and len(self.devices) >= len(self.registry.entries):
+            return
+        devices = await self._read(self.registry.reconnect)
+        if not devices:
+            return
+        self.devices = {device.uid: device for device in devices}
+        app.storage.general['devices'] = self.registry.dump()
+        for device in devices:
+            self.state.player(device.uid, name=device.player_name, ip=device.ip_address)
+
     async def handle_events(self) -> None:
         """Apply what the speakers have pushed to us. Called frequently, must stay cheap."""
         topology_changed = False
+        returned = False
         for event in self.subscriptions.drain():
+            # an event is a sign of life in its own right, and a cheaper one than any read
+            returned |= self.state.seen(event.uid, time.monotonic())
             if event.service == 'renderingControl':
                 self._apply_rendering(event.uid, event.variables)
             elif event.service == 'avTransport':
@@ -187,6 +214,8 @@ class System:
                     topology_changed = True
         if topology_changed:
             await self.refresh()
+        elif returned:
+            self._notify()  # a speaker that was greyed out is back and belongs among the rooms again
 
     def _apply_rendering(self, uid: str, variables: dict) -> None:
         player = self.state.player(uid)
@@ -355,7 +384,8 @@ class System:
             return False
         except Exception:
             log.exception('%s is unreachable', self.state.player(uid).name)
-            self.state.player(uid).online = False
+            if self.state.lost(uid):
+                self._notify()
             return False
 
     async def play_moment(self, moment: Moment) -> Plan:

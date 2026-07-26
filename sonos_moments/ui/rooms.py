@@ -26,6 +26,7 @@ def rooms_ui(system: System) -> None:
 
     for group in system.state.groups:
         _group_card(system, group)
+    _absent_card(system.state.absent_players)
 
 
 def _group_card(system: System, group: GroupState) -> None:
@@ -43,6 +44,22 @@ def _group_card(system: System, group: GroupState) -> None:
         with ui.column().classes('w-full p-2 gap-1'):
             for member in members:
                 _volume(system, member, with_name=len(members) > 1)
+
+
+def _absent_card(players: list[PlayerState]) -> None:
+    """List the speakers we cannot reach, greyed out rather than gone.
+
+    A speaker on a socket that is switched off is the normal case, and a room that silently
+    disappears from the list looks like a bug in the app rather than an unplugged speaker.
+    """
+    if not players:
+        return
+    with ui.card().classes('w-full p-3 gap-1 opacity-50'):
+        for player in players:
+            with ui.row(align_items='center').classes('w-full gap-2 flex-nowrap'):
+                ui.icon('sym_r_wifi_off')
+                ui.label(player.name or player.uid).classes('grow min-w-0 truncate')
+                ui.label('not reachable').classes('text-sm')
 
 
 def _title(members: list[PlayerState]) -> str:
@@ -106,8 +123,13 @@ def _grouping(system: System, group: GroupState) -> None:
 
 
 def _volume(system: System, player: PlayerState, *, with_name: bool) -> None:
-    """One volume row per speaker: a slider with a thumb big enough for a thumb, plus fine steps."""
-    with ui.row(align_items='center').classes('w-full gap-1 flex-nowrap'):
+    """One volume row per speaker: a slider with a thumb big enough for a thumb, plus fine steps.
+
+    A speaker we cannot reach keeps its row but loses its controls: showing its last known volume
+    as if it were live would invite dragging a slider that moves nothing.
+    """
+    dimmed = '' if player.online else ' opacity-50 pointer-events-none'
+    with ui.row(align_items='center').classes(f'w-full gap-1 flex-nowrap{dimmed}'):
         if with_name:
             ui.label().bind_text_from(player, 'name').classes('w-24 shrink-0 truncate')
         ui.button(on_click=lambda: system.set_mute(player.uid, not player.mute)).props('flat round dense') \

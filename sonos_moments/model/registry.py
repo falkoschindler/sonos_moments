@@ -45,7 +45,7 @@ class Registry:
 
         Blocking; call from a thread. Returns an empty list if nothing could be reached at all.
         """
-        anchor = self._probe_known()
+        anchor = next(iter(self._probe_known()), None)
         if anchor is None:
             anchor = self._search()
         if anchor is None:
@@ -66,13 +66,29 @@ class Registry:
         self.remember(devices)
         return devices
 
-    def _probe_known(self) -> soco.SoCo | None:
-        """Return the first known speaker that still answers under its remembered IP."""
+    def reconnect(self) -> list[soco.SoCo]:
+        """Try to reach the known speakers again, without a full search.
+
+        Cheap enough to run periodically: one short TCP probe per speaker, all at once. Asking a
+        speaker that answers about the household on top of that catches the ones whose address
+        has changed, because a probe of the remembered IP cannot find those.
+
+        Blocking; call from a thread.
+        """
+        devices = {device.uid: device for device in self._probe_known()}
+        if devices:
+            for device in self._household(next(iter(devices.values()))):
+                devices.setdefault(device.uid, device)
+        self.remember(list(devices.values()))
+        return sorted(devices.values(), key=lambda device: device.player_name)
+
+    def _probe_known(self) -> list[soco.SoCo]:
+        """Return every known speaker that still answers under its remembered IP."""
         if not self.entries:
-            return None
+            return []
         with ThreadPoolExecutor(max_workers=len(self.entries)) as executor:
             results = executor.map(self._probe, list(self.entries.values()))
-        return next((device for device in results if device is not None), None)
+        return [device for device in results if device is not None]
 
     @staticmethod
     def _probe(entry: DeviceEntry) -> soco.SoCo | None:
