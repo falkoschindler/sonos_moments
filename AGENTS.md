@@ -1,50 +1,51 @@
-# Hinweise für Agents
+# Notes for agents
 
-Sonos-Controller auf Basis von NiceGUI und SoCo, läuft im selben Netz wie die Speaker. Der aktuelle Umbau und die nächsten Schritte stehen in [PLAN.md](PLAN.md) — dort zuerst nachsehen, bevor du etwas planst.
+A Sonos controller built on NiceGUI and SoCo, running on the same network as the speakers. The current rebuild and the next steps are in [PLAN.md](PLAN.md) — look there first, before planning anything.
 
-## Kommandos
-
-```bash
-uv run sonos-moments --port 8081   # starten (nicht python main.py, das schaltet den Reloader an)
-uv run pytest                      # Tests, laufen ohne Speaker
-uv run ruff check .                # Lint, läuft auch als pre-commit-Hook
-```
-
-Der Formatter (`ruff format`) ist bewusst **nicht** aktiv: Er würde den Stil des Projekts umwerfen. Anführungszeichen sind einfach, Zeilenlänge 120.
-
-## Die Speaker sind echt
-
-Es gibt keine Testumgebung. Jeder Schreibzugriff geht an vier Lautsprecher in einer bewohnten Wohnung, und Wiedergabe ist hörbar. Deshalb:
-
-- Vor einem Test den Ist-Zustand aufnehmen (Gruppierung, Lautstärke, Mute, Quelle, Transport-Zustand) und danach exakt wiederherstellen.
-- Zum Testen von Wiedergabe einen stummgeschalteten Speaker nehmen, nicht einen, der gerade läuft.
-- Änderungen an der Gruppierung sind harmlos, solange nichts spielt — vorher prüfen.
-- Lesende Aufrufe sind unbedenklich. Vieles lässt sich rein lesend verifizieren, etwa `plan()` gegen den Live-Zustand rechnen, ohne ihn anzuwenden.
-
-Fällt dir keine unaufdringliche Testmöglichkeit ein, frag lieber nach, statt Musik anzuwerfen.
-
-## Der Pi läuft mit
-
-Auf `penthouse` (Raspberry Pi Zero 2 W) läuft dieselbe Anwendung dauerhaft als systemd-Service. Deployment und Unit stehen in der [README](README.md#deployment), kurz: `./deploy.sh`.
-
-**Nur eine Instanz darf gleichzeitig mit den Speakern reden.** Sonst halten zwei Prozesse `ZoneGroupTopology`-Abos, und wegen der Falle unten stellt SoCo das Polling ein — beide sehen dann eine Gruppierung, die nie wieder aktualisiert wird. Vor lokalen Tests gegen dieselben Speaker also:
+## Commands
 
 ```bash
-ssh -4 falko@penthouse.local 'sudo systemctl stop sonos_moments'
+uv run sonos-moments --port 8081   # start it (not python main.py, which turns the reloader on)
+uv run pytest                      # tests, they run without speakers
+uv run ruff check .                # lint, also runs as a pre-commit hook
 ```
 
-Wer dort arbeitet: 417 MB RAM, und unter Last wird er für Minuten unerreichbar, während Ping und TCP weiterlaufen. Das ist normal, er kommt von allein zurück — nicht den Stecker ziehen. Länger laufende Befehle immer abkoppeln (`nohup setsid … &`), sonst killt ein SSH-Abbruch sie mitten im Lauf.
+The formatter (`ruff format`) is deliberately **not** enabled: it would upend the style of this project. Quotes are single, line length is 120.
 
-## Fallen, die Zeit gekostet haben
+## The speakers are real
 
-- Sobald ein `ZoneGroupTopology`-Abo besteht, hört SoCo auf, die Topologie zu pollen, und erwartet, dass der Abonnent den Cache füttert. Ohne das bleibt die Gruppierung für immer stehen. Siehe `System._read_topology`.
-- In UPnP-Events sind Metadaten ein leerer String, wenn es nichts zu melden gibt. `getattr('', 'title', '')` liefert dann die Methode `str.title` statt des Defaults. Dafür gibt es `_text()`.
-- Nach dem Setzen einer neuen Stream-Quelle braucht der Speaker rund eine Sekunde, bevor er `play()` annimmt, sonst `UPnP Error 701`.
-- Zwei Controller gleichzeitig sind auch lokal ein Problem: Läuft die App, während ein Skript direkt auf dieselben Speaker schreibt, kommen `UPnP Error 402` und Read-Timeouts zurück, die nach einem Fehler im eigenen Code aussehen. Vor solchen Skripten die lokale Instanz beenden.
-- Ein Refresh erstreckt sich über mehrere `await`s. Nichts, was `state.groups` austauscht, darf dazwischenfunken — dafür gibt es das Lock in `System.refresh`.
+There is no test environment. Every write goes to actual speakers in someone's home, and playback is audible. Therefore:
 
-## Konventionen
+- Record the current state before a test (grouping, volume, mute, source, transport state) and restore it exactly afterwards.
+- To test playback, pick a muted speaker rather than one that is currently playing.
+- Changes to the grouping are harmless as long as nothing is playing — check first.
+- Reads are safe. Much can be verified by reading alone, such as computing `plan()` against the live state without applying it.
 
-- Commit-Messages auf Englisch, Code und Kommentare ebenfalls; Dokumentation und Gespräch auf Deutsch.
-- Kein Netzwerkzugriff im Render-Pfad. Die UI liest ausschließlich aus `SystemState`, alles Blockierende läuft in einem Thread.
-- Logik, die man ohne Speaker testen kann, gehört in eine reine Funktion — Vorbild ist `plan()` mit `tests/test_plan.py`.
+If no unobtrusive way to test comes to mind, ask rather than starting the music.
+
+## A Raspberry Pi runs alongside
+
+The same application runs permanently as a systemd service on a Raspberry Pi Zero 2 W. Deployment and the unit are described in the [README](README.md#deployment); in short, `./deploy.sh`.
+
+**Only one instance may talk to the speakers at a time.** Otherwise two processes hold `ZoneGroupTopology` subscriptions, and because of the pitfall below SoCo stops polling — both then see a grouping that is never updated again. So before testing locally against the same speakers:
+
+```bash
+ssh -4 "$SONOS_MOMENTS_HOST" 'sudo systemctl stop sonos_moments'
+```
+
+For anyone working on that machine: 417 MB of RAM, and under load it becomes unreachable for minutes while ping and TCP keep working. That is normal, it comes back on its own — do not pull the plug. Always detach longer-running commands (`nohup setsid … &`), or a dropped SSH connection kills them mid-run.
+
+## Pitfalls that have cost time
+
+- As soon as a `ZoneGroupTopology` subscription exists, SoCo stops polling the topology and expects the subscriber to feed the cache. Without that, the grouping stays frozen forever. See `System._read_topology`.
+- In UPnP events, metadata is an empty string when there is nothing to report. `getattr('', 'title', '')` then returns the `str.title` method instead of the default. That is what `_text()` is for.
+- After setting a new stream source, the speaker needs about a second before it accepts `play()`, otherwise `UPnP Error 701`.
+- Two controllers at once are a problem locally as well: if the app is running while a script writes to the same speakers directly, `UPnP Error 402` and read timeouts come back that look like a bug in your own code. Stop the local instance before running such scripts.
+- A refresh spans several `await`s. Nothing that replaces `state.groups` may interfere in between — that is what the lock in `System.refresh` is for.
+
+## Conventions
+
+- Everything committed is in English: commit messages, code, comments and documentation alike.
+- No network access in the render path. The UI reads exclusively from `SystemState`, everything blocking runs in a thread.
+- Logic that can be tested without speakers belongs in a pure function — `plan()` with `tests/test_plan.py` is the model to follow.
+- Nothing personal in the repository: no host names, user names, addresses from the local network, or anything else tied to one particular installation.

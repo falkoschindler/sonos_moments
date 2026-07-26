@@ -6,16 +6,22 @@ set -euo pipefail
 #
 #     ./setup.sh [user@host]
 #
+# Without an argument the target comes from $SONOS_MOMENTS_HOST, so your own
+# host name does not have to live in this repository.
+#
 # Afterwards, ./deploy.sh ships the code. Enabling the read-only overlay is a
 # separate, deliberate step - see the end of this script.
 
-TARGET="${1:-falko@penthouse.local}"
+TARGET="${1:-${SONOS_MOMENTS_HOST:-pi@raspberrypi.local}}"
 USER_NAME="${TARGET%@*}"
+HOST="${TARGET#*@}"
 REMOTE_DIR="sonos_moments"
 SERVICE="sonos_moments"
 
 echo "==> Dropping stale host keys"
-for name in penthouse penthouse.local "${TARGET#*@}"; do
+# A freshly flashed card generates new host keys, so the remembered ones no
+# longer match. Cover both the plain name and the .local form.
+for name in "$HOST" "${HOST%.local}" "${HOST%.local}.local"; do
     ssh-keygen -R "$name" >/dev/null 2>&1 || true
 done
 

@@ -3,8 +3,11 @@ set -euo pipefail
 
 # Deploy to a Raspberry Pi (or any Linux host) running Sonos Moments as a systemd service.
 # Usage: ./deploy.sh [user@host]
+#
+# Without an argument the target comes from $SONOS_MOMENTS_HOST, so your own
+# host name does not have to live in this repository.
 
-TARGET="${1:-falko@penthouse.local}"
+TARGET="${1:-${SONOS_MOMENTS_HOST:-pi@raspberrypi.local}}"
 REMOTE_DIR="sonos_moments"
 SERVICE="sonos_moments"
 HOST="${TARGET#*@}"

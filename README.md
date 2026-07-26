@@ -79,6 +79,13 @@ Then run the one-time setup from your machine:
 ./setup.sh [user@host]
 ```
 
+Both scripts take the target as an argument.
+Without one they fall back to `$SONOS_MOMENTS_HOST`, so you can put your own host in your shell profile instead of passing it every time:
+
+```bash
+export SONOS_MOMENTS_HOST=pi@raspberrypi.local
+```
+
 It installs uv, creates the service, points the NiceGUI storage at the boot partition (see below), and reduces how much gets written to the card.
 The unit it writes is `/etc/systemd/system/sonos_moments.service`:
 
