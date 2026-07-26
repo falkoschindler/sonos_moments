@@ -4,7 +4,7 @@ Ziel: Live-Updates statt Polling, spürbar schnellere UI, robuster Dauerbetrieb 
 
 ## Stand
 
-Auf Branch `rebuild-event-driven` umgesetzt: Etappe 1 (Registry und State-Layer), Etappe 2 (Event-Subscriptions), Etappe 3 (Schreibpfad) und Etappe 4 (Quellen-Referenzen, Favoriten-Menü, Abgleich beim Abspielen, UI-Neubau, Moment-Editor, queue-erhaltendes Capture). Dazu kam unabhängig davon der Umstieg von Poetry auf uv samt Modernisierung der pre-commit-Hooks und ein Packaging-Fix, durch den `icon.png` überhaupt erst im Wheel landet.
+Auf Branch `rebuild-event-driven` umgesetzt: Etappe 1 (Registry und State-Layer), Etappe 2 (Event-Subscriptions), Etappe 3 (Schreibpfad) und Etappe 4 (Quellen-Referenzen, Favoriten-Menü, Abgleich beim Abspielen, UI-Neubau, Moment-Editor, queue-erhaltendes Capture). Dazu kam unabhängig davon der Umstieg von Poetry auf uv samt Modernisierung der pre-commit-Hooks, ein Packaging-Fix, durch den `icon.png` überhaupt erst im Wheel landet, und — aus Etappe 6 vorgezogen — das PWA-Manifest.
 
 Gegen das laufende System verifiziert ist alles davon außer dem Wiederherstellen einer Queue: Dafür müsste etwas in einer Queue liegen, und es gibt derzeit weder eine lokale Bibliothek (`list_library_shares()` ist leer) noch einen verknüpften Dienst, aus dem sich etwas einreihen ließe. Der Pfad ist nur durch Tests des Speicherformats abgedeckt.
 
@@ -191,7 +191,9 @@ Der Zero 2 W (4× Cortex-A53, 1 GHz, 512 MB) reicht für diese Last problemlos: 
 - **Startart.** systemd-Unit mit `Restart=always` und `After=network-online.target`, Logs nach journald mit Rate-Limit, damit die SD-Karte nicht vollgeschrieben wird. Als Kommando `uv run sonos-moments`; uv gibt es als Binary für aarch64, armv7 und armv6.
 - **SD-Karte.** Billige Karten mit schlechten Random-Writes bremsen jeden Neustart und jedes Log. Mit `hdparm -t` bzw. `dd` gegenprüfen.
 
-Dazu die PWA-Kosmetik, damit das Ganze sich auf dem Handy wie eine App anfühlt: eine Route für `manifest.json`, `ui.add_head_html` mit `<link rel="manifest">`, `apple-mobile-web-app-capable` und `apple-mobile-web-app-status-bar-style`, plus Icons. Über iOS-Safari genügt das für „Zum Home-Bildschirm" inklusive Vollbild, auch ohne HTTPS. Offline-Fähigkeit gibt es nicht und braucht es nicht, weil die App ohne Heimnetz sowieso nichts steuern kann.
+Dazu die PWA-Kosmetik, damit das Ganze sich auf dem Handy wie eine App anfühlt. *(umgesetzt in `pwa.py`: eine Route für `manifest.json`, `ui.add_head_html` mit `<link rel="manifest">`, `apple-mobile-web-app-capable`, `apple-mobile-web-app-status-bar-style` und `theme-color` passend zum schwarzen Header, dazu `icon-192.png` und `icon-512.png` als statische Routen.)*
+
+Die Icons sind bewusst deckend weiß hinterlegt: iOS legt ein transparentes Home-Screen-Icon auf Schwarz, und darin verschwände der schwarze Kreis des Logos. Über iOS-Safari genügt das für „Zum Home-Bildschirm" inklusive Vollbild, auch ohne HTTPS. Bei Android/Chrome nicht: eine echte Installation setzt einen Secure Context voraus, und wir liefern im Heimnetz über HTTP aus — dort bleibt es eine Verknüpfung, die im Browser aufgeht. Offline-Fähigkeit gibt es weder so noch so, und sie braucht es auch nicht, weil die App ohne Heimnetz sowieso nichts steuern kann; ein Service Worker (den Chrome für die Installation ohnehin sehen wollen würde) scheitert am selben HTTP.
 
 ## Rewrite oder schrittweise?
 
@@ -210,7 +212,7 @@ Der UI-Neubau gehört zeitlich zu Etappe 4: Erst dann steht das Datenmodell, das
 3. ~~**Schreibpfad.**~~ *(erledigt)* Echo-Suppression, Drosselung, `sleep(1.0)`-Hack entfernt.
 4. ~~**Moments und Quellen.**~~ *(erledigt)* Quellen-Referenz statt Transport-URI, Favoriten-Menü, korrekte Restore-Reihenfolge, Abgleich statt stumpfem Wiederherstellen, UI-Neubau, Moment-Editor und queue-erhaltendes Capture.
 5. **TuneIn-Suche.** Stöbern und Suchen nach Radiosendern direkt in der App.
-6. **Watchdog und Deployment.** Stale-Kennzeichnung, systemd-Unit, Powersave, PWA-Manifest. Die Resubscribe-Logik steckt bereits im Sync der Subscriptions.
+6. **Watchdog und Deployment.** Stale-Kennzeichnung, systemd-Unit, Powersave. Die Resubscribe-Logik steckt bereits im Sync der Subscriptions, das PWA-Manifest ist vorgezogen und erledigt.
 7. **Optional: SoundCloud und Mixcloud.** Auth-Flow mit Token-Store.
 
 Etappen 1 bis 3 hängen inhaltlich zusammen und ergeben zusammen den eigentlichen Umbau; danach ist Etappe 4 der Teil mit dem größten Alltagsnutzen.

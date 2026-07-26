@@ -3,6 +3,7 @@ from pathlib import Path
 
 from nicegui import app, ui
 
+from . import pwa
 from .model import System
 from .ui import moments_ui, rooms_ui
 
@@ -10,6 +11,8 @@ EVENT_INTERVAL = 0.1  # how often the queues filled by the event listener thread
 REFRESH_INTERVAL = 60.0  # safety net in case we ever miss an event
 
 system = System()
+
+pwa.setup()
 
 
 @app.on_startup

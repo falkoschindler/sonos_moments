@@ -54,6 +54,12 @@ If you want to access it from another device, you need to replace `localhost` wi
 
 Run `sonos-moments --help` to see all available options, e.g. to change the port.
 
+### On your phone
+
+Sonos Moments ships a web app manifest, so it can live on the home screen instead of in a browser tab.
+On iOS, open the address in Safari and choose "Add to Home Screen": the app then starts full screen, without browser chrome, and gets its own icon.
+Android requires HTTPS for a real installation, which a server in your local network usually does not have — there, "Add to Home screen" creates a shortcut that opens in the browser.
+
 ## Deployment
 
 For permanent operation, Sonos Moments is best run as a systemd service on a small always-on machine like a Raspberry Pi Zero 2 W.
