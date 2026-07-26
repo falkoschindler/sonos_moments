@@ -31,6 +31,19 @@ class Pending:
     deadline: float
 
 
+def _text(metadata: Any, attribute: str) -> str:
+    """Read a field from event metadata, which is a DIDL object only when there is any.
+
+    Speakers send an empty string when they have nothing to say, and ``getattr('', 'title')``
+    happily returns the ``str.title`` method instead of falling back to the default.
+    """
+    if not isinstance(metadata, str):
+        value = getattr(metadata, attribute, '')
+        if isinstance(value, str):
+            return value
+    return ''
+
+
 def _play(device: soco.SoCo) -> None:
     """Start playback, retrying while the speaker is still busy with a fresh stream.
 
@@ -67,6 +80,7 @@ class System:
         self._zone_group_state = ''
         self._pending: dict[tuple[str, str], Pending] = {}
         self._writers: set[str] = set()
+        self._refresh_lock = asyncio.Lock()
 
     async def start(self) -> None:
         """Restore what we know from storage and connect to the speakers."""
@@ -114,7 +128,15 @@ class System:
         await self.load_favorites()
 
     async def refresh(self) -> None:
-        """Read the current state of all speakers in parallel."""
+        """Read the current state of all speakers in parallel.
+
+        Serialized, because a refresh spans several awaits and an incoming topology event must
+        not swap the groups out from underneath a running one.
+        """
+        async with self._refresh_lock:
+            await self._refresh()
+
+    async def _refresh(self) -> None:
         if not self.devices:
             self._notify()
             return
@@ -184,22 +206,24 @@ class System:
         if 'transport_state' in variables:
             group.transport_state = variables['transport_state'] or 'STOPPED'
         if 'av_transport_uri_meta_data' in variables:
-            group.channel = getattr(variables['av_transport_uri_meta_data'], 'title', '') or ''
+            group.channel = _text(variables['av_transport_uri_meta_data'], 'title')
         if 'current_track_meta_data' in variables:
             track = variables['current_track_meta_data']
-            group.title = getattr(track, 'title', '') or ''
-            group.artist = getattr(track, 'creator', '') or ''
+            group.title = _text(track, 'title')
+            group.artist = _text(track, 'creator')
 
     async def _apply_topology(self, topology: Topology) -> None:
         """Update the groups, rebuilding them only when the grouping actually changed."""
         changed = self._signature(topology) != self._signature(self._current_topology())
         if changed:
-            self.state.groups = [GroupState(coordinator_uid=coordinator_uid, member_uids=member_uids)
-                                 for coordinator_uid, member_uids in topology]
-            self.state.groups.sort(key=lambda group: self.state.player(group.coordinator_uid).name)
+            groups = [GroupState(coordinator_uid=coordinator_uid, member_uids=member_uids)
+                      for coordinator_uid, member_uids in topology]
+            groups.sort(key=lambda group: self.state.player(group.coordinator_uid).name)
+            self.state.groups = groups
+        groups = list(self.state.groups)  # the reads below await, so work on a snapshot
         playbacks = await asyncio.gather(*(self._read(self._read_playback, group.coordinator_uid)
-                                           for group in self.state.groups))
-        for group, playback in zip(self.state.groups, playbacks, strict=True):
+                                           for group in groups))
+        for group, playback in zip(groups, playbacks, strict=True):
             if playback is None:
                 continue
             group.transport_state, group.channel, group.title, group.artist = playback
