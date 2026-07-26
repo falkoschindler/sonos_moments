@@ -64,8 +64,23 @@ Android requires HTTPS for a real installation, which a server in your local net
 
 For permanent operation, Sonos Moments is best run as a systemd service on a small always-on machine like a Raspberry Pi Zero 2 W.
 
-Install [uv](https://docs.astral.sh/uv/) on the target, put the code into `~/sonos_moments`, and run `uv sync` there once.
-Then create `/etc/systemd/system/sonos_moments.service`:
+### Preparing the card
+
+Flash **Raspberry Pi OS Lite (64-bit)** with the Raspberry Pi Imager - the Lite image, because the machine runs headless and a Zero 2 W only has about 417 MB of usable RAM.
+Open the settings (the gear, or `Cmd+Shift+X`) and preconfigure hostname, user, your SSH public key, wifi SSID with country, and the timezone.
+Without that, a headless board never joins the network and the card has to come out again.
+
+Note that a Zero 2 W speaks 2.4 GHz only, and its antenna is etched onto the board with no connector for an external one - a metal enclosure is enough to keep it off the network for good.
+
+The first boot resizes the filesystem and generates host keys, which takes its time on this hardware; give it 15 to 20 minutes before assuming something is wrong.
+Then run the one-time setup from your machine:
+
+```bash
+./setup.sh [user@host]
+```
+
+It installs uv, creates the service, points the NiceGUI storage at the boot partition (see below), and reduces how much gets written to the card.
+The unit it writes is `/etc/systemd/system/sonos_moments.service`:
 
 ```ini
 [Unit]
@@ -91,7 +106,29 @@ WantedBy=multi-user.target
 
 `ExecStart` points at the virtualenv directly instead of going through `uv run`, which would try to reach the network on every start - an unnecessary source of failure while booting, when the network may not be up yet.
 
-Enable it with `sudo systemctl enable --now sonos_moments`.
+### Surviving the plug being pulled
+
+An SD card does not take kindly to being switched off mid-write, and a machine that lives behind a socket will be switched off eventually.
+The fix is the overlay filesystem that Raspberry Pi OS ships with:
+
+```bash
+sudo raspi-config nonint enable_overlayfs && sudo reboot
+```
+
+The root filesystem is then mounted read-only with a tmpfs layered on top, so the card is never written to again and the plug can be pulled at any time.
+This is not a read-only system in the painful sense - logs, `app.storage` and temporary files all keep working normally, they just do not survive a reboot.
+What they do consume is RAM, which is why `setup.sh` limits the journal to 16 MB in memory.
+
+Two consequences worth knowing:
+
+- The moments would be lost on every reboot, so `setup.sh` symlinks `.nicegui` to a directory on the boot partition, which stays writable.
+  The card is then only ever written to in the instant a moment is saved.
+- A deployment does not survive a reboot either.
+  Turn the overlay off, deploy, turn it back on:
+
+  ```bash
+  sudo raspi-config nonint disable_overlayfs && sudo reboot
+  ```
 
 Subsequent deployments are handled by `deploy.sh`, which syncs the working tree with [livesync](https://github.com/zauberzeug/livesync), updates the dependencies and restarts the service:
 
@@ -102,7 +139,7 @@ Subsequent deployments are handled by `deploy.sh`, which syncs the working tree 
 It waits for the service to answer on port 8081 and points at the journal if it does not.
 Note that `.syncignore` keeps `.venv/` out of the transfer - the target builds its own for its architecture.
 
-While developing, `livesync` can also keep watching and restart the service on every change:
+While developing, and with the overlay turned off, `livesync` can also keep watching and restart the service on every change:
 
 ```bash
 livesync . <user>@<host>:sonos_moments --on-change "sudo systemctl restart sonos_moments"
