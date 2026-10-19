@@ -1,2 +1,4 @@
 __pycache__/
 .nicegui/
+.venv/
+dist/

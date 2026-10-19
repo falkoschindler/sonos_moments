@@ -14,15 +14,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.x"
-
-      - name: Set up Poetry
-        uses: abatilo/actions-poetry@v2
-        with:
-          poetry-version: "1.8.3"
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v9.0.0
 
       - name: Get version
         id: get_version
@@ -31,12 +24,14 @@ jobs:
       - name: Set version
         run: |
           VERSION=${{ env.VERSION }}
-          poetry version ${VERSION#v}
+          uv version ${VERSION#v}
 
       - name: Publish PyPI package
         env:
-          POETRY_PYPI_TOKEN_PYPI: ${{ secrets.PYPI_API_TOKEN }}
-        run: poetry publish --build
+          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          uv build
+          uv publish
 
       - name: Create GitHub release entry
         uses: softprops/action-gh-release@v1

@@ -54,16 +54,138 @@ If you want to access it from another device, you need to replace `localhost` wi
 
 Run `sonos-moments --help` to see all available options, e.g. to change the port.
 
+### On your phone
+
+Sonos Moments ships a web app manifest, so it can live on the home screen instead of in a browser tab.
+On iOS, open the address in Safari and choose "Add to Home Screen": the app then starts full screen, without browser chrome, and gets its own icon.
+Android requires HTTPS for a real installation, which a server in your local network usually does not have — there, "Add to Home screen" creates a shortcut that opens in the browser.
+
+## Deployment
+
+For permanent operation, Sonos Moments is best run as a systemd service on a small always-on machine like a Raspberry Pi Zero 2 W.
+
+### Preparing the card
+
+The board runs **Raspberry Pi OS Lite (64-bit)** - the Lite image, because it runs headless and a Zero 2 W only has about 417 MB of usable RAM.
+On macOS, `flash.sh` writes it and preconfigures the first boot in one go:
+
+```bash
+./flash.sh [user@host]
+```
+
+It fetches the current image, verifies its checksum, refuses to write to anything that is not a removable SD card, asks twice before erasing, reads the card back to compare, and then writes the first-boot configuration: hostname and account from the target you passed, your SSH public key, and the wifi you are asked for.
+The account gets no password at all - SSH takes the key only, `sudo` needs none, and the console logs in by itself, so nothing has to be remembered two years from now.
+Whoever holds the board can read the unencrypted card anyway.
+
+The Raspberry Pi Imager does the same job, but **use version 2.x for Trixie images**.
+Trixie is customised through cloud-init (`user-data` and `network-config` on the boot partition), while Bookworm used a `custom.toml`.
+Imager 1.x does not know the newer format, assumes the older one, and writes a file the image never reads: the customisation appears to succeed and the board comes up with no user, no wifi and no SSH.
+Whichever way you go, preconfiguring is not optional - a headless board that was not told about the wifi never joins the network, and the card has to come out again.
+
+Note that a Zero 2 W speaks 2.4 GHz only, and its antenna is etched onto the board with no connector for an external one - a metal enclosure is enough to keep it off the network for good.
+
+The first boot resizes the filesystem, generates host keys and applies the customisation, which takes its time on this hardware; give it 15 to 20 minutes before assuming something is wrong.
+`cloud-init status --long` afterwards says whether it all went through.
+Then run the one-time setup from your machine:
+
+```bash
+./setup.sh [user@host]
+```
+
+All three scripts take the target as an argument.
+Without one they fall back to `$SONOS_MOMENTS_HOST`, so you can put your own host in your shell profile instead of passing it every time:
+
+```bash
+export SONOS_MOMENTS_HOST=pi@raspberrypi.local
+```
+
+It installs uv, creates the service, points the NiceGUI storage at the boot partition (see below), and reduces how much gets written to the card.
+The unit it writes is `/etc/systemd/system/sonos_moments.service`:
+
+```ini
+[Unit]
+Description=Sonos Moments
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/<user>/sonos_moments
+User=<user>
+Group=<user>
+
+ExecStart=/home/<user>/sonos_moments/.venv/bin/sonos-moments --port 8081
+
+Restart=on-failure
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
+```
+
+`ExecStart` points at the virtualenv directly instead of going through `uv run`, which would try to reach the network on every start - an unnecessary source of failure while booting, when the network may not be up yet.
+
+### Surviving the plug being pulled
+
+An SD card does not take kindly to being switched off mid-write, and a machine that lives behind a socket will be switched off eventually.
+The fix is the overlay filesystem that Raspberry Pi OS ships with:
+
+```bash
+sudo raspi-config nonint enable_overlayfs && sudo reboot
+```
+
+Building the initramfs takes a minute or two on a Zero 2 W, so detach it if the connection is at all shaky.
+Afterwards `findmnt /` reports `overlay` as the filesystem, and that is the check that settles it - current versions prepend `overlayroot=tmpfs` to the kernel command line rather than the `boot=overlay` that older instructions look for.
+
+The root filesystem is then mounted read-only with a tmpfs layered on top, so the card is never written to again and the plug can be pulled at any time.
+This is not a read-only system in the painful sense - logs, `app.storage` and temporary files all keep working normally, they just do not survive a reboot.
+What they do consume is RAM, which is why `setup.sh` limits the journal to 16 MB in memory.
+
+Two consequences worth knowing:
+
+- The moments would be lost on every reboot, so `setup.sh` symlinks `.nicegui` to a directory on the boot partition, which stays writable.
+  The card is then only ever written to in the instant a moment is saved.
+- A deployment does not survive a reboot either.
+  Turn the overlay off, deploy, turn it back on:
+
+  ```bash
+  sudo raspi-config nonint disable_overlayfs && sudo reboot
+  ```
+
+Subsequent deployments are handled by `deploy.sh`, which syncs the working tree with [livesync](https://github.com/zauberzeug/livesync), updates the dependencies and restarts the service:
+
+```bash
+./deploy.sh [user@host]
+```
+
+It waits for the service to answer on port 8081 and points at the journal if it does not.
+Note that `.syncignore` keeps `.venv/` out of the transfer - the target builds its own for its architecture.
+
+While developing, and with the overlay turned off, `livesync` can also keep watching and restart the service on every change:
+
+```bash
+livesync . <user>@<host>:sonos_moments --on-change "sudo systemctl restart sonos_moments"
+```
+
+Only one instance should talk to the speakers at a time.
+As soon as a `ZoneGroupTopology` subscription exists, SoCo stops polling the topology, so a second instance can leave the first one with a stale view.
+Stop the service before running a local copy against the same speakers.
+
 ## Usage
 
 The web interface is quite simple and self-explanatory:
 
-On the top panel there is a list of all available speakers.
-You can control the volume of each speaker individually, mute/unmute it, and play/pause the current track.
+Everything is on a single screen.
+The main area shows one card per group of speakers with what is playing there, buttons to play, pause and stop it, a menu to pick one of your Sonos favorites, and a menu to change which rooms belong to the group.
+Below that, each speaker has its own row to control volume and mute.
 
-You can capture the current state of the speakers by clicking the button on the top right.
-A new moment will be added to the list below, with buttons to play, re-capture and delete it.
-Feel free to rename the moment to something more meaningful.
+The bar at the bottom holds your moments.
+Tapping one restores it; the arrow next to it opens a menu to edit, re-capture or delete it.
+The button on the right captures the current state of the speakers as a new moment.
+
+Both lead into the same editor, where a moment is put together rather than only recorded: give it a name, pick the rooms of each group, choose a source from your Sonos favorites and set the volume of every speaker.
+So you can build a moment for tomorrow morning without waking anyone up tonight.
 
 ## Vision
 
@@ -74,5 +196,6 @@ But there are many more features that could be added in the future:
 - set alarms and timers
 - pause and auto-resume after a predefined time (e.g. for a commercial break)
 - allow copy-pasting a YouTube/Spotify/SoundCloud/Mixcloud link to play it on the speakers
+- search SoundCloud and Mixcloud from within the app, which needs a sign-in of its own for each service
 
 More ideas are welcome, and contributions are highly appreciated!

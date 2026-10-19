@@ -1,26 +1,33 @@
-[tool.poetry]
+[project]
 name = "sonos-moments"
 version = "0.2.0"
 description = "Sonos Controller based on NiceGUI"
-authors = ["Falko Schindler <mail@falkoschindler.de>"]
+authors = [{ name = "Falko Schindler", email = "mail@falkoschindler.de" }]
 license = "MIT"
+license-files = ["LICENSE"]
 readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "dataclasses-json>=0.6.7,<0.7.0",
+    "nicegui>=3.0,<4.0",
+    "soco>=0.31.1,<0.32.0",
+]
 
-[tool.poetry.dependencies]
-dataclasses-json = "^0.6.7"
-nicegui = "^2.7.0"
-python = "^3.11"
-soco = "^0.30.4"
-
-[tool.poetry.group.dev.dependencies]
-ruff = "^0.4.3"
-
-[tool.poetry.scripts]
+[project.scripts]
 sonos-moments = "sonos_moments.app:main_without_reload"
 
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.16.0",
+]
+
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["uv_build>=0.9.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = ""  # the package lives in the project root, not in src/
 
 [tool.mypy]
 
