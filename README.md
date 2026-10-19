@@ -196,5 +196,6 @@ But there are many more features that could be added in the future:
 - set alarms and timers
 - pause and auto-resume after a predefined time (e.g. for a commercial break)
 - allow copy-pasting a YouTube/Spotify/SoundCloud/Mixcloud link to play it on the speakers
+- search SoundCloud and Mixcloud from within the app, which needs a sign-in of its own for each service
 
 More ideas are welcome, and contributions are highly appreciated!

@@ -1,6 +1,6 @@
 # Notes for agents
 
-A Sonos controller built on NiceGUI and SoCo, running on the same network as the speakers. The current rebuild and the next steps are in [PLAN.md](PLAN.md) — look there first, before planning anything.
+A Sonos controller built on NiceGUI and SoCo, running on the same network as the speakers. Ideas for what comes next are collected in the [README](README.md#vision).
 
 ## Commands
 
