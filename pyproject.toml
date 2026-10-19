@@ -1,6 +1,6 @@
 [project]
 name = "sonos-moments"
-version = "0.2.0"
+version = "0.3.0"
 description = "Sonos Controller based on NiceGUI"
 authors = [{ name = "Falko Schindler", email = "mail@falkoschindler.de" }]
 license = "MIT"
